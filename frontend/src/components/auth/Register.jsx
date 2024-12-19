@@ -35,7 +35,7 @@ export default function Register() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 px-4">
       <div className="w-full max-w-sm backdrop-blur-lg bg-white/10 p-8 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
         <h1 className="text-4xl font-bold text-center text-white mb-2">Register</h1>
-        <p className="text-center text-purple-200 mb-8">Create your itMix account</p>
+        <p className="text-center text-purple-200 mb-8">Create your AudioAlchemy account</p>
         
         {error && (
           <div className="mb-4 p-3 bg-red-900/30 border-l-4 border-red-500 text-red-200">
