@@ -22,6 +22,16 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Test route for connectivity (moved to top of routes)
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    message: 'Backend is running',
+    environment: process.env.NODE_ENV,
+    corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Create required directories
 const dirs = ['uploads', 'uploads/stems', 'uploads/processed', 'uploads/mixed'];
 dirs.forEach(dir => {
@@ -40,16 +50,6 @@ mongoose.connect(process.env.MONGODB_URI)
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/templates', require('./routes/templates'));
-
-// Test route for connectivity
-app.get('/api/test', (req, res) => {
-  res.json({ 
-    message: 'Backend is running',
-    environment: process.env.NODE_ENV,
-    corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-    timestamp: new Date().toISOString()
-  });
-});
 
 // Serve mixed audio files
 app.get('/audio/mixed/:filename', auth, (req, res) => {
