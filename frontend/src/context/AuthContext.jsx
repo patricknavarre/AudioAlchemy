@@ -67,6 +67,9 @@ export const AuthProvider = ({ children }) => {
   const register = async (name, email, password) => {
     try {
       setError(null);
+      console.log('Attempting registration with URL:', `${import.meta.env.VITE_API_URL}/api/auth/register`);
+      console.log('Registration payload:', { name, email, password: '***' });
+      
       const response = await axios.post(
         `${import.meta.env.VITE_API_URL}/api/auth/register`,
         { name, email, password },
@@ -77,6 +80,7 @@ export const AuthProvider = ({ children }) => {
         }
       );
       
+      console.log('Registration response:', response.data);
       const { token, user } = response.data;
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
@@ -86,8 +90,17 @@ export const AuthProvider = ({ children }) => {
       
       return true;
     } catch (error) {
-      console.error('Registration error details:', error.response || error);
-      setError(error.response?.data?.message || 'Registration failed');
+      console.error('Registration error details:', {
+        message: error.message,
+        response: error.response,
+        config: {
+          url: error.config?.url,
+          method: error.config?.method,
+          headers: error.config?.headers,
+          baseURL: error.config?.baseURL
+        }
+      });
+      setError(error.response?.data?.message || error.message || 'Registration failed');
       throw error;
     }
   };
