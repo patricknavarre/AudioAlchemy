@@ -6,7 +6,10 @@ exports.register = async (req, res) => {
   try {
     console.log('Register request received:', {
       body: req.body,
-      headers: req.headers
+      headers: req.headers,
+      url: req.url,
+      method: req.method,
+      path: req.path
     });
 
     // Validation
@@ -21,6 +24,11 @@ exports.register = async (req, res) => {
 
     const { email, password, name } = req.body;
     console.log('Processing registration for:', email);
+
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET is not set');
+      return res.status(500).json({ message: 'Server configuration error' });
+    }
 
     // Check if user exists
     let user = await User.findOne({ email: email.toLowerCase() });
@@ -55,10 +63,15 @@ exports.register = async (req, res) => {
         name: user.name
       }
     };
-    console.log('Sending successful response');
+    console.log('Sending successful response:', response);
     res.status(201).json(response);
   } catch (error) {
-    console.error('Registration error:', error);
+    console.error('Registration error:', {
+      error: error.message,
+      stack: error.stack,
+      name: error.name,
+      code: error.code
+    });
     res.status(500).json({ 
       message: 'Server error during registration',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
