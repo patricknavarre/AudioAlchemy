@@ -41,6 +41,16 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/templates', require('./routes/templates'));
 
+// Test route for connectivity
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    message: 'Backend is running',
+    environment: process.env.NODE_ENV,
+    corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Serve mixed audio files
 app.get('/audio/mixed/:filename', auth, (req, res) => {
   try {

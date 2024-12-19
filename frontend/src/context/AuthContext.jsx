@@ -67,8 +67,13 @@ export const AuthProvider = ({ children }) => {
   const register = async (name, email, password) => {
     try {
       setError(null);
-      console.log('Attempting registration with URL:', `${import.meta.env.VITE_API_URL}/api/auth/register`);
-      console.log('Registration payload:', { name, email, password: '***' });
+      console.log('Starting registration process...');
+      console.log('API URL:', import.meta.env.VITE_API_URL);
+      console.log('Registration payload:', JSON.stringify({ 
+        name, 
+        email, 
+        password: '[REDACTED]' 
+      }, null, 2));
       
       const response = await axios.post(
         `${import.meta.env.VITE_API_URL}/api/auth/register`,
@@ -80,7 +85,7 @@ export const AuthProvider = ({ children }) => {
         }
       );
       
-      console.log('Registration response:', response.data);
+      console.log('Registration successful, response:', JSON.stringify(response.data, null, 2));
       const { token, user } = response.data;
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
@@ -91,16 +96,28 @@ export const AuthProvider = ({ children }) => {
       return true;
     } catch (error) {
       console.error('Registration error details:', {
+        name: error.name,
         message: error.message,
-        response: error.response,
-        config: {
+        stack: error.stack,
+        response: {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          headers: error.response?.headers
+        },
+        request: {
           url: error.config?.url,
           method: error.config?.method,
           headers: error.config?.headers,
-          baseURL: error.config?.baseURL
+          data: error.config?.data
         }
       });
-      setError(error.response?.data?.message || error.message || 'Registration failed');
+      
+      const errorMessage = error.response?.data?.message || 
+                          error.message || 
+                          'Registration failed. Please try again.';
+      console.error('Final error message:', errorMessage);
+      setError(errorMessage);
       throw error;
     }
   };
