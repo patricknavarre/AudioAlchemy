@@ -59,9 +59,19 @@ dirs.forEach(dir => {
 });
 
 // Database connection
+console.log('Attempting to connect to MongoDB with URI:', process.env.MONGODB_URI ? '[URI exists]' : '[URI missing]');
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+  .then(() => {
+    console.log('Successfully connected to MongoDB');
+    console.log('MongoDB connection state:', mongoose.connection.readyState);
+  })
+  .catch(err => {
+    console.error('MongoDB connection error:', {
+      message: err.message,
+      code: err.code,
+      name: err.name
+    });
+  });
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));

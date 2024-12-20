@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
+const mongoose = require('mongoose');
 
 exports.register = async (req, res) => {
   try {
@@ -9,7 +10,12 @@ exports.register = async (req, res) => {
       headers: req.headers,
       url: req.url,
       method: req.method,
-      path: req.path
+      path: req.path,
+      env: {
+        nodeEnv: process.env.NODE_ENV,
+        jwtSecret: process.env.JWT_SECRET ? '[exists]' : '[missing]',
+        mongoUri: process.env.MONGODB_URI ? '[exists]' : '[missing]'
+      }
     });
 
     // Validation
@@ -27,7 +33,18 @@ exports.register = async (req, res) => {
 
     if (!process.env.JWT_SECRET) {
       console.error('JWT_SECRET is not set');
-      return res.status(500).json({ message: 'Server configuration error' });
+      return res.status(500).json({ message: 'Server configuration error - JWT_SECRET missing' });
+    }
+
+    if (!process.env.MONGODB_URI) {
+      console.error('MONGODB_URI is not set');
+      return res.status(500).json({ message: 'Server configuration error - MONGODB_URI missing' });
+    }
+
+    // Check MongoDB connection
+    if (mongoose.connection.readyState !== 1) {
+      console.error('MongoDB not connected. Current state:', mongoose.connection.readyState);
+      return res.status(500).json({ message: 'Database connection error' });
     }
 
     // Check if user exists
@@ -70,7 +87,8 @@ exports.register = async (req, res) => {
       error: error.message,
       stack: error.stack,
       name: error.name,
-      code: error.code
+      code: error.code,
+      mongooseState: mongoose.connection.readyState
     });
     res.status(500).json({ 
       message: 'Server error during registration',
