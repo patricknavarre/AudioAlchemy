@@ -9,6 +9,50 @@ const auth = require('./middleware/auth');
 // Import models
 require('./models/User');
 
+// Define upload directories first
+const UPLOAD_DIR = process.env.NODE_ENV === 'production' ? '/tmp/audioalchemy' : path.join(__dirname, 'uploads');
+const STEMS_DIR = path.join(UPLOAD_DIR, 'stems');
+const PROCESSED_DIR = path.join(UPLOAD_DIR, 'processed');
+const MIXED_DIR = path.join(UPLOAD_DIR, 'mixed');
+
+// Create required directories with permission checks
+const dirs = [UPLOAD_DIR, STEMS_DIR, PROCESSED_DIR, MIXED_DIR];
+dirs.forEach(dir => {
+  const dirPath = path.resolve(dir);
+  try {
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true, mode: 0o777 });
+      console.log(`Created directory: ${dirPath}`);
+    }
+    // Check if directory is writable
+    fs.accessSync(dirPath, fs.constants.W_OK);
+    console.log(`Directory ${dirPath} exists and is writable`);
+    
+    // Log directory permissions
+    const stats = fs.statSync(dirPath);
+    console.log(`Directory ${dirPath} permissions:`, {
+      mode: stats.mode,
+      uid: stats.uid,
+      gid: stats.gid,
+      isDirectory: stats.isDirectory(),
+      isWritable: Boolean(stats.mode & fs.constants.W_OK),
+      absolutePath: path.resolve(dirPath),
+      freeSpace: fs.statfsSync(dirPath).bfree * fs.statfsSync(dirPath).bsize
+    });
+  } catch (error) {
+    console.error(`Error with directory ${dirPath}:`, {
+      error: error.message,
+      code: error.code,
+      stack: error.stack,
+      attempted: {
+        path: dirPath,
+        absolutePath: path.resolve(dirPath)
+      }
+    });
+    process.exit(1);
+  }
+});
+
 const app = express();
 
 // CORS configuration
@@ -191,50 +235,6 @@ app.get('/api/test', (req, res) => {
     origin: req.get('origin'),
     host: req.get('host')
   });
-});
-
-// After the imports
-const UPLOAD_DIR = process.env.NODE_ENV === 'production' ? '/tmp/audioalchemy' : path.join(__dirname, 'uploads');
-const STEMS_DIR = path.join(UPLOAD_DIR, 'stems');
-const PROCESSED_DIR = path.join(UPLOAD_DIR, 'processed');
-const MIXED_DIR = path.join(UPLOAD_DIR, 'mixed');
-
-// Create required directories with permission checks
-const dirs = [UPLOAD_DIR, STEMS_DIR, PROCESSED_DIR, MIXED_DIR];
-dirs.forEach(dir => {
-  const dirPath = path.resolve(dir);
-  try {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true, mode: 0o777 });
-      console.log(`Created directory: ${dirPath}`);
-    }
-    // Check if directory is writable
-    fs.accessSync(dirPath, fs.constants.W_OK);
-    console.log(`Directory ${dirPath} exists and is writable`);
-    
-    // Log directory permissions
-    const stats = fs.statSync(dirPath);
-    console.log(`Directory ${dirPath} permissions:`, {
-      mode: stats.mode,
-      uid: stats.uid,
-      gid: stats.gid,
-      isDirectory: stats.isDirectory(),
-      isWritable: Boolean(stats.mode & fs.constants.W_OK),
-      absolutePath: path.resolve(dirPath),
-      freeSpace: fs.statfsSync(dirPath).bfree * fs.statfsSync(dirPath).bsize
-    });
-  } catch (error) {
-    console.error(`Error with directory ${dirPath}:`, {
-      error: error.message,
-      code: error.code,
-      stack: error.stack,
-      attempted: {
-        path: dirPath,
-        absolutePath: path.resolve(dirPath)
-      }
-    });
-    process.exit(1);
-  }
 });
 
 // Add temporary file upload endpoint for testing
