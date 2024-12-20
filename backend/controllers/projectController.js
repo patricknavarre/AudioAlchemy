@@ -6,6 +6,26 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const audioProcessor = require('../services/audioProcessor');
 
+// Ensure required directories exist
+const ensureDirectories = async () => {
+  const dirs = [
+    path.join(__dirname, '../uploads'),
+    path.join(__dirname, '../uploads/stems'),
+    path.join(__dirname, '../uploads/processed'),
+    path.join(__dirname, '../uploads/mixed')
+  ];
+
+  for (const dir of dirs) {
+    try {
+      await fs.mkdir(dir, { recursive: true });
+      console.log('Directory created/verified:', dir);
+    } catch (error) {
+      console.error('Error creating directory:', dir, error);
+      throw error;
+    }
+  }
+};
+
 // Configure multer for stem uploads
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
@@ -55,8 +75,12 @@ exports.createProject = async (req, res) => {
     console.log('Creating project:', {
       name: req.body.name,
       mixStyle: req.body.mixStyle,
-      userId: req.userId
+      userId: req.userId,
+      headers: req.headers
     });
+
+    // Ensure directories exist
+    await ensureDirectories();
 
     // Handle file upload
     await new Promise((resolve, reject) => {
@@ -76,6 +100,7 @@ exports.createProject = async (req, res) => {
 
     // Process files
     const processedDir = path.join(__dirname, '../uploads/processed');
+    console.log('Processing files in directory:', processedDir);
     const processedFiles = await audioProcessor.processAudioFiles(req.files, processedDir);
 
     // Create project files array with proper structure
@@ -105,7 +130,12 @@ exports.createProject = async (req, res) => {
     res.status(201).json(savedProject);
 
   } catch (error) {
-    console.error('Project creation error:', error);
+    console.error('Project creation error:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      code: error.code
+    });
     res.status(500).json({ 
       message: 'Error creating project',
       error: error.message
