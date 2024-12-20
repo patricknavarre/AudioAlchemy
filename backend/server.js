@@ -57,9 +57,14 @@ const app = express();
 
 // CORS configuration - must be first
 const corsOptions = {
-  origin: ['https://audio-alchemy-git-main-patricknavarres-projects.vercel.app', 'http://localhost:5173'],
+  origin: function(origin, callback) {
+    console.log('Incoming request from origin:', origin);
+    // Allow all origins during development/testing
+    callback(null, true);
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
   credentials: true,
   optionsSuccessStatus: 200
 };
@@ -68,6 +73,35 @@ app.use(cors(corsOptions));
 
 // Pre-flight requests
 app.options('*', cors(corsOptions));
+
+// Add request logging
+app.use((req, res, next) => {
+  console.log('Request:', {
+    method: req.method,
+    path: req.path,
+    origin: req.get('origin'),
+    headers: {
+      ...req.headers,
+      authorization: req.headers.authorization ? '[exists]' : '[missing]'
+    }
+  });
+  next();
+});
+
+// Add response logging
+app.use((req, res, next) => {
+  const originalSend = res.send;
+  res.send = function(data) {
+    console.log('Response:', {
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      headers: res.getHeaders()
+    });
+    return originalSend.call(this, data);
+  };
+  next();
+});
 
 // Body parsing middleware
 app.use(express.json({ limit: '100mb' }));
