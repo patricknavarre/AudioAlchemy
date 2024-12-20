@@ -8,6 +8,12 @@ const audioProcessor = require('../services/audioProcessor');
 const mongoose = require('mongoose');
 const os = require('os');
 
+// At the top of the file
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '../uploads');
+const STEMS_DIR = path.join(UPLOAD_DIR, 'stems');
+const PROCESSED_DIR = path.join(UPLOAD_DIR, 'processed');
+const MIXED_DIR = path.join(UPLOAD_DIR, 'mixed');
+
 // Ensure required directories exist with proper permissions
 const ensureDirectories = async () => {
   const dirs = [
@@ -54,24 +60,24 @@ const storage = multer.diskStorage({
         encoding: file.encoding,
         mimetype: file.mimetype
       },
-      headers: req.headers
+      headers: req.headers,
+      uploadDir: STEMS_DIR
     });
 
-    const uploadDir = path.join(__dirname, '../uploads/stems');
     try {
-      await fs.mkdir(uploadDir, { recursive: true, mode: 0o755 });
-      console.log('Upload directory created/verified:', uploadDir);
+      await fs.mkdir(STEMS_DIR, { recursive: true, mode: 0o755 });
+      console.log('Upload directory created/verified:', STEMS_DIR);
       
       // Verify directory permissions
-      await fs.access(uploadDir, fs.constants.W_OK);
+      await fs.access(STEMS_DIR, fs.constants.W_OK);
       console.log('Upload directory is writable');
       
-      cb(null, uploadDir);
+      cb(null, STEMS_DIR);
     } catch (error) {
       console.error('Error with upload directory:', {
         error: error.message,
         stack: error.stack,
-        uploadDir
+        uploadDir: STEMS_DIR
       });
       cb(error);
     }

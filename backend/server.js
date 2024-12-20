@@ -132,10 +132,16 @@ app.get('/api/test', (req, res) => {
   });
 });
 
+// After the imports
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
+const STEMS_DIR = path.join(UPLOAD_DIR, 'stems');
+const PROCESSED_DIR = path.join(UPLOAD_DIR, 'processed');
+const MIXED_DIR = path.join(UPLOAD_DIR, 'mixed');
+
 // Create required directories with permission checks
-const dirs = ['uploads', 'uploads/stems', 'uploads/processed', 'uploads/mixed'];
+const dirs = [UPLOAD_DIR, STEMS_DIR, PROCESSED_DIR, MIXED_DIR];
 dirs.forEach(dir => {
-  const dirPath = path.join(__dirname, dir);
+  const dirPath = path.resolve(dir);
   try {
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true, mode: 0o755 });
@@ -152,14 +158,20 @@ dirs.forEach(dir => {
       uid: stats.uid,
       gid: stats.gid,
       isDirectory: stats.isDirectory(),
-      isWritable: Boolean(stats.mode & fs.constants.W_OK)
+      isWritable: Boolean(stats.mode & fs.constants.W_OK),
+      absolutePath: path.resolve(dirPath)
     });
   } catch (error) {
     console.error(`Error with directory ${dirPath}:`, {
       error: error.message,
       code: error.code,
-      stack: error.stack
+      stack: error.stack,
+      attempted: {
+        path: dirPath,
+        absolutePath: path.resolve(dirPath)
+      }
     });
+    process.exit(1);
   }
 });
 
