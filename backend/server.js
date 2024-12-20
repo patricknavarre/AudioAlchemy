@@ -16,16 +16,28 @@ const allowedOrigins = [
   'http://localhost:5173',
   'https://audioalchemy.onrender.app',
   'https://audio-alchemy-git-main-patricknavarres-projects.vercel.app',
-  'https://audioalchemy.vercel.app'
+  'https://audioalchemy.vercel.app',
+  'https://audioalchemy-frontend.vercel.app'
 ];
 
 app.use(cors({
   origin: function(origin, callback) {
+    console.log('Incoming request from origin:', origin);
+    
     // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log('No origin provided, allowing request');
+      return callback(null, true);
+    }
     
     if (allowedOrigins.indexOf(origin) === -1) {
       console.log('Origin not allowed by CORS:', origin);
+      console.log('Allowed origins:', allowedOrigins);
+      // During development, we'll allow all origins
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Development mode - allowing unknown origin');
+        return callback(null, true);
+      }
       return callback(null, false);
     }
     console.log('Origin allowed by CORS:', origin);
@@ -49,7 +61,10 @@ app.get('/api/test', (req, res) => {
     environment: process.env.NODE_ENV,
     corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
     timestamp: new Date().toISOString(),
-    mongoState: mongoose.connection.readyState
+    mongoState: mongoose.connection.readyState,
+    headers: req.headers,
+    origin: req.get('origin'),
+    host: req.get('host')
   });
 });
 
@@ -79,6 +94,11 @@ const mongooseOptions = {
 // Initialize server after MongoDB connects
 const initializeServer = async () => {
   try {
+    console.log('Connecting to MongoDB with options:', {
+      ...mongooseOptions,
+      uri: process.env.MONGODB_URI ? '[URI exists]' : '[URI missing]'
+    });
+
     await mongoose.connect(process.env.MONGODB_URI, mongooseOptions);
     console.log('Successfully connected to MongoDB');
     console.log('MongoDB connection state:', mongoose.connection.readyState);
@@ -86,7 +106,9 @@ const initializeServer = async () => {
       host: mongoose.connection.host,
       port: mongoose.connection.port,
       name: mongoose.connection.name,
-      models: Object.keys(mongoose.models)
+      models: Object.keys(mongoose.models),
+      readyState: mongoose.connection.readyState,
+      collections: Object.keys(mongoose.connection.collections)
     });
 
     // Set up routes only after successful MongoDB connection
@@ -102,11 +124,19 @@ const initializeServer = async () => {
       console.error('Global error handler:', {
         error: err.message,
         stack: err.stack,
-        mongoState: mongoose.connection.readyState
+        name: err.name,
+        code: err.code,
+        mongoState: mongoose.connection.readyState,
+        headers: req.headers,
+        method: req.method,
+        path: req.path,
+        query: req.query,
+        body: req.method === 'POST' ? req.body : undefined
       });
       res.status(500).json({ 
         message: 'Something broke!', 
-        error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+        error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
+        mongoState: mongoose.connection.readyState
       });
     });
 
@@ -116,11 +146,14 @@ const initializeServer = async () => {
       console.log(`Server running on port ${PORT}`);
       console.log('CORS origin:', process.env.CORS_ORIGIN || 'http://localhost:5173');
       console.log('MongoDB state:', mongoose.connection.readyState);
+      console.log('Environment:', process.env.NODE_ENV);
     });
   } catch (error) {
     console.error('Failed to initialize server:', {
       error: error.message,
       stack: error.stack,
+      name: error.name,
+      code: error.code,
       mongoState: mongoose.connection.readyState
     });
     process.exit(1);

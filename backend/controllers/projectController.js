@@ -5,6 +5,7 @@ const multer = require('multer');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const audioProcessor = require('../services/audioProcessor');
+const mongoose = require('mongoose');
 
 // Ensure required directories exist
 const ensureDirectories = async () => {
@@ -29,17 +30,39 @@ const ensureDirectories = async () => {
 // Configure multer for stem uploads
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
+    console.log('Multer destination handler:', {
+      file: {
+        fieldname: file.fieldname,
+        originalname: file.originalname,
+        encoding: file.encoding,
+        mimetype: file.mimetype
+      }
+    });
+
     const uploadDir = path.join(__dirname, '../uploads/stems');
     try {
       await fs.mkdir(uploadDir, { recursive: true });
       console.log('Upload directory created/verified:', uploadDir);
       cb(null, uploadDir);
     } catch (error) {
-      console.error('Error creating upload directory:', error);
+      console.error('Error creating upload directory:', {
+        error: error.message,
+        stack: error.stack,
+        uploadDir
+      });
       cb(error);
     }
   },
   filename: (req, file, cb) => {
+    console.log('Multer filename handler:', {
+      file: {
+        fieldname: file.fieldname,
+        originalname: file.originalname,
+        encoding: file.encoding,
+        mimetype: file.mimetype
+      }
+    });
+
     const timestamp = Date.now();
     const safeName = file.originalname.replace(/[^a-zA-Z0-9]/g, '_');
     const filename = `${timestamp}-${safeName}`;
@@ -51,6 +74,15 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
+    console.log('Multer fileFilter:', {
+      file: {
+        fieldname: file.fieldname,
+        originalname: file.originalname,
+        encoding: file.encoding,
+        mimetype: file.mimetype
+      }
+    });
+
     const allowedTypes = ['.wav', '.mp3', '.aif', '.aiff'];
     const ext = path.extname(file.originalname).toLowerCase();
     console.log('Checking file:', {
@@ -72,29 +104,44 @@ const upload = multer({
 
 exports.createProject = async (req, res) => {
   try {
-    console.log('Creating project:', {
-      name: req.body.name,
-      mixStyle: req.body.mixStyle,
+    console.log('Project creation request received:', {
+      body: req.body,
+      files: req.files ? req.files.length : 0,
       userId: req.userId,
-      headers: req.headers
+      headers: {
+        ...req.headers,
+        authorization: req.headers.authorization ? '[exists]' : '[missing]'
+      },
+      method: req.method,
+      path: req.path
     });
 
     // Ensure directories exist
     await ensureDirectories();
+    console.log('Directories verified');
 
     // Handle file upload
     await new Promise((resolve, reject) => {
       upload(req, res, (err) => {
         if (err) {
-          console.error('Upload error:', err);
+          console.error('Upload error:', {
+            message: err.message,
+            code: err.code,
+            name: err.name,
+            stack: err.stack
+          });
           reject(err);
         } else {
+          console.log('Upload successful:', {
+            filesReceived: req.files ? req.files.length : 0
+          });
           resolve();
         }
       });
     });
 
     if (!req.files || req.files.length === 0) {
+      console.error('No files received in request');
       return res.status(400).json({ message: 'No files uploaded' });
     }
 
@@ -102,6 +149,7 @@ exports.createProject = async (req, res) => {
     const processedDir = path.join(__dirname, '../uploads/processed');
     console.log('Processing files in directory:', processedDir);
     const processedFiles = await audioProcessor.processAudioFiles(req.files, processedDir);
+    console.log('Files processed:', processedFiles.length);
 
     // Create project files array with proper structure
     const files = processedFiles.map(file => ({
@@ -126,7 +174,12 @@ exports.createProject = async (req, res) => {
     const project = new Project(projectData);
     const savedProject = await project.save();
     
-    console.log('Project created:', savedProject);
+    console.log('Project created successfully:', {
+      id: savedProject._id,
+      name: savedProject.name,
+      filesCount: savedProject.files.length
+    });
+
     res.status(201).json(savedProject);
 
   } catch (error) {
@@ -134,11 +187,13 @@ exports.createProject = async (req, res) => {
       message: error.message,
       stack: error.stack,
       name: error.name,
-      code: error.code
+      code: error.code,
+      mongoState: mongoose.connection.readyState
     });
     res.status(500).json({ 
       message: 'Error creating project',
-      error: error.message
+      error: error.message,
+      mongoState: mongoose.connection.readyState
     });
   }
 };

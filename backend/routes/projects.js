@@ -5,6 +5,23 @@ const projectController = require('../controllers/projectController');
 const Project = require('../models/Project');
 const path = require('path');
 
+// Debug middleware for all project routes
+router.use((req, res, next) => {
+  console.log('Project Route Request:', {
+    method: req.method,
+    path: req.path,
+    query: req.query,
+    params: req.params,
+    body: req.method === 'POST' ? req.body : undefined,
+    headers: {
+      ...req.headers,
+      authorization: req.headers.authorization ? '[exists]' : '[missing]'
+    },
+    files: req.files ? req.files.length : 0
+  });
+  next();
+});
+
 // Test route - no auth required for testing
 router.post('/test-upload', projectController.createProject);
 router.get('/test/:id', async (req, res) => {
