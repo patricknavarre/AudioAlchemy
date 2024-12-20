@@ -9,7 +9,7 @@ const mongoose = require('mongoose');
 const os = require('os');
 
 // At the top of the file
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '../uploads');
+const UPLOAD_DIR = process.env.NODE_ENV === 'production' ? '/tmp/audioalchemy' : path.join(__dirname, '../uploads');
 const STEMS_DIR = path.join(UPLOAD_DIR, 'stems');
 const PROCESSED_DIR = path.join(UPLOAD_DIR, 'processed');
 const MIXED_DIR = path.join(UPLOAD_DIR, 'mixed');
@@ -61,16 +61,26 @@ const storage = multer.diskStorage({
         mimetype: file.mimetype
       },
       headers: req.headers,
-      uploadDir: STEMS_DIR
+      uploadDir: STEMS_DIR,
+      freeSpace: fs.statfsSync('/tmp').bfree * fs.statfsSync('/tmp').bsize
     });
 
     try {
-      await fs.mkdir(STEMS_DIR, { recursive: true, mode: 0o755 });
+      await fs.mkdir(STEMS_DIR, { recursive: true, mode: 0o777 });
       console.log('Upload directory created/verified:', STEMS_DIR);
       
       // Verify directory permissions
       await fs.access(STEMS_DIR, fs.constants.W_OK);
       console.log('Upload directory is writable');
+      
+      const stats = await fs.stat(STEMS_DIR);
+      console.log('Directory permissions:', {
+        path: STEMS_DIR,
+        mode: stats.mode.toString(8),
+        uid: stats.uid,
+        gid: stats.gid,
+        freeSpace: fs.statfsSync(STEMS_DIR).bfree * fs.statfsSync(STEMS_DIR).bsize
+      });
       
       cb(null, STEMS_DIR);
     } catch (error) {

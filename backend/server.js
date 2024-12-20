@@ -133,7 +133,7 @@ app.get('/api/test', (req, res) => {
 });
 
 // After the imports
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
+const UPLOAD_DIR = process.env.NODE_ENV === 'production' ? '/tmp/audioalchemy' : path.join(__dirname, 'uploads');
 const STEMS_DIR = path.join(UPLOAD_DIR, 'stems');
 const PROCESSED_DIR = path.join(UPLOAD_DIR, 'processed');
 const MIXED_DIR = path.join(UPLOAD_DIR, 'mixed');
@@ -144,7 +144,7 @@ dirs.forEach(dir => {
   const dirPath = path.resolve(dir);
   try {
     if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true, mode: 0o755 });
+      fs.mkdirSync(dirPath, { recursive: true, mode: 0o777 });
       console.log(`Created directory: ${dirPath}`);
     }
     // Check if directory is writable
@@ -159,7 +159,8 @@ dirs.forEach(dir => {
       gid: stats.gid,
       isDirectory: stats.isDirectory(),
       isWritable: Boolean(stats.mode & fs.constants.W_OK),
-      absolutePath: path.resolve(dirPath)
+      absolutePath: path.resolve(dirPath),
+      freeSpace: fs.statfsSync(dirPath).bfree * fs.statfsSync(dirPath).bsize
     });
   } catch (error) {
     console.error(`Error with directory ${dirPath}:`, {
