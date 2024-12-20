@@ -38,6 +38,11 @@ app.use(cors({
         console.log('Development mode - allowing unknown origin');
         return callback(null, true);
       }
+      console.log('Production mode - checking origin:', origin);
+      if (origin.includes('vercel.app') || origin.includes('render.com')) {
+        console.log('Allowing Vercel/Render domain:', origin);
+        return callback(null, true);
+      }
       return callback(null, false);
     }
     console.log('Origin allowed by CORS:', origin);
@@ -50,15 +55,47 @@ app.use(cors({
   maxAge: 86400 // 24 hours
 }));
 
+// Handle preflight requests
+app.options('*', cors());
+
 // Increase payload size limits for file uploads
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Serve static files from uploads directory
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Serve static files from uploads directory with CORS
+app.use('/uploads', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  next();
+}, express.static(path.join(__dirname, 'uploads')));
 
-// Add OPTIONS handling for preflight requests
-app.options('*', cors());
+// Add routes for serving processed and mixed files
+app.get('/api/projects/processed/:filename', (req, res) => {
+  const filePath = path.join(__dirname, 'uploads/processed', req.params.filename);
+  console.log('Serving processed file:', {
+    requestedPath: filePath,
+    exists: fs.existsSync(filePath)
+  });
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).json({ message: 'File not found' });
+  }
+});
+
+app.get('/api/projects/mixed/:filename', (req, res) => {
+  const filePath = path.join(__dirname, 'uploads/mixed', req.params.filename);
+  console.log('Serving mixed file:', {
+    requestedPath: filePath,
+    exists: fs.existsSync(filePath)
+  });
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).json({ message: 'File not found' });
+  }
+});
 
 // Add error handling middleware
 app.use((err, req, res, next) => {

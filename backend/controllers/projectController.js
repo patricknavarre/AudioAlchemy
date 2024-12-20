@@ -8,7 +8,7 @@ const audioProcessor = require('../services/audioProcessor');
 const mongoose = require('mongoose');
 const os = require('os');
 
-// Ensure required directories exist
+// Ensure required directories exist with proper permissions
 const ensureDirectories = async () => {
   const dirs = [
     path.join(__dirname, '../uploads'),
@@ -19,10 +19,26 @@ const ensureDirectories = async () => {
 
   for (const dir of dirs) {
     try {
-      await fs.mkdir(dir, { recursive: true });
+      await fs.mkdir(dir, { recursive: true, mode: 0o755 });
       console.log('Directory created/verified:', dir);
+      
+      // Verify directory permissions
+      await fs.access(dir, fs.constants.W_OK);
+      console.log('Directory is writable:', dir);
+      
+      const stats = await fs.stat(dir);
+      console.log('Directory permissions:', {
+        path: dir,
+        mode: stats.mode.toString(8),
+        uid: stats.uid,
+        gid: stats.gid
+      });
     } catch (error) {
-      console.error('Error creating directory:', dir, error);
+      console.error('Error creating/verifying directory:', {
+        dir,
+        error: error.message,
+        stack: error.stack
+      });
       throw error;
     }
   }
@@ -42,11 +58,16 @@ const storage = multer.diskStorage({
 
     const uploadDir = path.join(__dirname, '../uploads/stems');
     try {
-      await fs.mkdir(uploadDir, { recursive: true });
+      await fs.mkdir(uploadDir, { recursive: true, mode: 0o755 });
       console.log('Upload directory created/verified:', uploadDir);
+      
+      // Verify directory permissions
+      await fs.access(uploadDir, fs.constants.W_OK);
+      console.log('Upload directory is writable');
+      
       cb(null, uploadDir);
     } catch (error) {
-      console.error('Error creating upload directory:', {
+      console.error('Error with upload directory:', {
         error: error.message,
         stack: error.stack,
         uploadDir
