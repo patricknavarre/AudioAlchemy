@@ -113,7 +113,8 @@ exports.createProject = async (req, res) => {
         authorization: req.headers.authorization ? '[exists]' : '[missing]'
       },
       method: req.method,
-      path: req.path
+      path: req.path,
+      mongoState: mongoose.connection.readyState
     });
 
     // Ensure directories exist
@@ -128,12 +129,19 @@ exports.createProject = async (req, res) => {
             message: err.message,
             code: err.code,
             name: err.name,
-            stack: err.stack
+            stack: err.stack,
+            mongoState: mongoose.connection.readyState
           });
           reject(err);
         } else {
           console.log('Upload successful:', {
-            filesReceived: req.files ? req.files.length : 0
+            filesReceived: req.files ? req.files.length : 0,
+            files: req.files ? req.files.map(f => ({
+              originalname: f.originalname,
+              path: f.path,
+              size: f.size,
+              exists: fsSync.existsSync(f.path)
+            })) : []
           });
           resolve();
         }
@@ -149,7 +157,17 @@ exports.createProject = async (req, res) => {
     const processedDir = path.join(__dirname, '../uploads/processed');
     console.log('Processing files in directory:', processedDir);
     const processedFiles = await audioProcessor.processAudioFiles(req.files, processedDir);
-    console.log('Files processed:', processedFiles.length);
+    console.log('Files processed:', {
+      count: processedFiles.length,
+      files: processedFiles.map(f => ({
+        originalPath: f.originalPath,
+        processedPath: f.processedPath,
+        exists: {
+          original: fsSync.existsSync(f.originalPath),
+          processed: fsSync.existsSync(f.processedPath)
+        }
+      }))
+    });
 
     // Create project files array with proper structure
     const files = processedFiles.map(file => ({
@@ -172,12 +190,19 @@ exports.createProject = async (req, res) => {
     console.log('Creating project with data:', JSON.stringify(projectData, null, 2));
 
     const project = new Project(projectData);
+    console.log('Project model created:', {
+      id: project._id,
+      name: project.name,
+      filesCount: project.files.length,
+      mongoState: mongoose.connection.readyState
+    });
+
     const savedProject = await project.save();
-    
-    console.log('Project created successfully:', {
+    console.log('Project saved successfully:', {
       id: savedProject._id,
       name: savedProject.name,
-      filesCount: savedProject.files.length
+      filesCount: savedProject.files.length,
+      mongoState: mongoose.connection.readyState
     });
 
     res.status(201).json(savedProject);
