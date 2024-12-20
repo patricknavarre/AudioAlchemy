@@ -55,51 +55,79 @@ dirs.forEach(dir => {
 
 const app = express();
 
-// Basic CORS middleware
+// CORS configuration - must be first
+const corsOptions = {
+  origin: function(origin, callback) {
+    console.log('Incoming request from origin:', origin);
+    // Allow all origins during development/testing
+    callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+
+// Pre-flight requests
+app.options('*', cors(corsOptions));
+
+// Add request logging
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://audio-alchemy-git-main-patricknavarres-projects.vercel.app');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.header('Access-Control-Allow-Credentials', 'true');
-
-  // Handle preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
+  console.log('Request:', {
+    method: req.method,
+    path: req.path,
+    origin: req.get('origin'),
+    headers: {
+      ...req.headers,
+      authorization: req.headers.authorization ? '[exists]' : '[missing]'
+    }
+  });
   next();
 });
 
-// Basic error handling
-app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  res.status(500).json({ 
-    error: 'Internal server error',
-    details: process.env.NODE_ENV === 'development' ? err.message : undefined
-  });
+// Add response logging
+app.use((req, res, next) => {
+  const originalSend = res.send;
+  res.send = function(data) {
+    console.log('Response:', {
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      headers: res.getHeaders()
+    });
+    return originalSend.call(this, data);
+  };
+  next();
 });
 
-// Body parsing middleware - BEFORE routes
+// Body parsing middleware
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
-// Routes
+// Routes setup
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/templates', require('./routes/templates'));
 
-// Static files
+// Static file serving
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// Test endpoint
-app.get('/api/test', (req, res) => {
-  res.json({
-    status: 'ok',
-    message: 'Server is running',
-    cors: {
-      origin: req.headers.origin,
-      method: req.method
-    }
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Error:', {
+    message: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    headers: req.headers
+  });
+  
+  res.status(err.status || 500).json({
+    message: err.message || 'Internal Server Error',
+    status: err.status || 500
   });
 });
 
@@ -119,6 +147,20 @@ const initializeServer = async () => {
     process.exit(1);
   }
 };
+
+// Test route for connectivity
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    message: 'Backend is running',
+    environment: process.env.NODE_ENV,
+    corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    timestamp: new Date().toISOString(),
+    mongoState: mongoose.connection.readyState,
+    headers: req.headers,
+    origin: req.get('origin'),
+    host: req.get('host')
+  });
+});
 
 // Add temporary file upload endpoint for testing
 app.post('/api/test-upload', express.raw({ type: 'application/octet-stream', limit: '10mb' }), (req, res) => {
