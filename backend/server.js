@@ -56,91 +56,33 @@ dirs.forEach(dir => {
 const app = express();
 
 // CORS configuration
-const allowedOrigins = [
-  'http://localhost:5173',
-  'https://audioalchemy.onrender.app',
-  'https://audio-alchemy-git-main-patricknavarres-projects.vercel.app',
-  'https://audioalchemy.vercel.app',
-  'https://audioalchemy-frontend.vercel.app'
-];
-
-// Add request logging middleware (add this before other middleware)
-app.use((req, res, next) => {
-  console.log('Incoming request:', {
-    method: req.method,
-    url: req.url,
-    path: req.path,
-    headers: {
-      ...req.headers,
-      authorization: req.headers.authorization ? '[exists]' : '[missing]'
-    },
-    query: req.query,
-    body: req.method === 'POST' ? req.body : undefined,
-    contentType: req.headers['content-type'],
-    contentLength: req.headers['content-length']
-  });
-  next();
-});
-
-// Add response logging middleware
-app.use((req, res, next) => {
-  const originalSend = res.send;
-  res.send = function(data) {
-    console.log('Response:', {
-      method: req.method,
-      url: req.url,
-      statusCode: res.statusCode,
-      contentType: res.get('Content-Type'),
-      contentLength: res.get('Content-Length')
-    });
-    return originalSend.call(this, data);
-  };
-  next();
-});
-
-// Update CORS configuration
 app.use(cors({
-  origin: function(origin, callback) {
-    console.log('CORS check for origin:', origin);
-    
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      console.log('No origin provided, allowing request');
-      return callback(null, true);
-    }
-    
-    // Allow all origins in development
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('Development mode - allowing all origins');
-      return callback(null, true);
-    }
-    
-    // In production, allow Vercel and Render domains
-    if (origin.includes('vercel.app') || origin.includes('render.com')) {
-      console.log('Allowing Vercel/Render domain:', origin);
-      return callback(null, true);
-    }
-    
-    // Check against allowed origins
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      console.log('Origin allowed by CORS:', origin);
-      return callback(null, true);
-    }
-    
-    console.log('Origin not allowed by CORS:', origin);
-    return callback(new Error('Not allowed by CORS'));
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  origin: true, // Allow all origins for now
   credentials: true,
-  maxAge: 86400, // 24 hours
-  preflightContinue: false,
-  optionsSuccessStatus: 204
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Origin',
+    'X-Requested-With',
+    'Content-Type',
+    'Accept',
+    'Authorization',
+    'Access-Control-Allow-Origin'
+  ],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 86400 // 24 hours
 }));
 
 // Handle preflight requests
 app.options('*', cors());
+
+// Add headers to all responses
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', true);
+  next();
+});
 
 // Update file upload limits
 app.use(express.json({ limit: '100mb' }));
