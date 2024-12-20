@@ -60,18 +60,46 @@ dirs.forEach(dir => {
 
 // Database connection
 console.log('Attempting to connect to MongoDB with URI:', process.env.MONGODB_URI ? '[URI exists]' : '[URI missing]');
-mongoose.connect(process.env.MONGODB_URI)
+
+const mongooseOptions = {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
+  family: 4
+};
+
+mongoose.connect(process.env.MONGODB_URI, mongooseOptions)
   .then(() => {
     console.log('Successfully connected to MongoDB');
     console.log('MongoDB connection state:', mongoose.connection.readyState);
+    console.log('MongoDB connection details:', {
+      host: mongoose.connection.host,
+      port: mongoose.connection.port,
+      name: mongoose.connection.name
+    });
   })
   .catch(err => {
     console.error('MongoDB connection error:', {
       message: err.message,
       code: err.code,
-      name: err.name
+      name: err.name,
+      stack: err.stack
     });
   });
+
+// Monitor MongoDB connection
+mongoose.connection.on('error', err => {
+  console.error('MongoDB connection error event:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('MongoDB disconnected');
+});
+
+mongoose.connection.on('connected', () => {
+  console.log('MongoDB connected');
+});
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
@@ -272,4 +300,5 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log('CORS origin:', process.env.CORS_ORIGIN || 'http://localhost:5173');
+}); 
 }); 
