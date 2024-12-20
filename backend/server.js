@@ -109,30 +109,30 @@ app.use('/uploads', (req, res, next) => {
   res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   next();
-}, express.static(path.join(__dirname, 'uploads')));
+}, express.static(UPLOAD_DIR));
 
 // Add routes for serving processed and mixed files
 app.get('/api/projects/processed/:filename', (req, res) => {
-  const filePath = path.join(__dirname, 'uploads/processed', req.params.filename);
+  const filePath = path.join(PROCESSED_DIR, req.params.filename);
   console.log('Serving processed file:', {
     requestedPath: filePath,
     exists: fs.existsSync(filePath)
   });
   if (fs.existsSync(filePath)) {
-    res.sendFile(filePath);
+    res.sendFile(path.resolve(filePath));
   } else {
     res.status(404).json({ message: 'File not found' });
   }
 });
 
 app.get('/api/projects/mixed/:filename', (req, res) => {
-  const filePath = path.join(__dirname, 'uploads/mixed', req.params.filename);
+  const filePath = path.join(MIXED_DIR, req.params.filename);
   console.log('Serving mixed file:', {
     requestedPath: filePath,
     exists: fs.existsSync(filePath)
   });
   if (fs.existsSync(filePath)) {
-    res.sendFile(filePath);
+    res.sendFile(path.resolve(filePath));
   } else {
     res.status(404).json({ message: 'File not found' });
   }

@@ -16,16 +16,11 @@ const MIXED_DIR = path.join(UPLOAD_DIR, 'mixed');
 
 // Ensure required directories exist with proper permissions
 const ensureDirectories = async () => {
-  const dirs = [
-    path.join(__dirname, '../uploads'),
-    path.join(__dirname, '../uploads/stems'),
-    path.join(__dirname, '../uploads/processed'),
-    path.join(__dirname, '../uploads/mixed')
-  ];
+  const dirs = [UPLOAD_DIR, STEMS_DIR, PROCESSED_DIR, MIXED_DIR];
 
   for (const dir of dirs) {
     try {
-      await fs.mkdir(dir, { recursive: true, mode: 0o755 });
+      await fs.mkdir(dir, { recursive: true, mode: 0o777 });
       console.log('Directory created/verified:', dir);
       
       // Verify directory permissions
@@ -230,11 +225,11 @@ exports.createProject = async (req, res) => {
     }
 
     // Process files
-    const processedDir = path.join(__dirname, '../uploads/processed');
+    const processedDir = PROCESSED_DIR;
     console.log('Processing files in directory:', processedDir);
     
     // Ensure processed directory exists
-    await fs.mkdir(processedDir, { recursive: true });
+    await fs.mkdir(processedDir, { recursive: true, mode: 0o777 });
     
     const processedFiles = await audioProcessor.processAudioFiles(req.files, processedDir);
     console.log('Files processed:', {
@@ -608,11 +603,10 @@ exports.mixProject = async (req, res) => {
 
     // Create mix filename and paths
     const mixFileName = `mix_${project._id}_${Date.now()}.wav`;
-    const mixDir = path.join(__dirname, '../uploads/mixed');
-    const mixPath = path.join(mixDir, mixFileName);
+    const mixPath = path.join(MIXED_DIR, mixFileName);
 
     // Ensure mixed directory exists
-    await fs.mkdir(mixDir, { recursive: true });
+    await fs.mkdir(MIXED_DIR, { recursive: true, mode: 0o777 });
 
     // Log what we're about to do
     console.log('Starting mix:', {
@@ -668,7 +662,7 @@ exports.mixProject = async (req, res) => {
 
 exports.serveMixedFile = async (req, res) => {
   try {
-    const filePath = path.join(__dirname, '../uploads/mixed', req.params.filename);
+    const filePath = path.join(MIXED_DIR, req.params.filename);
     console.log('Serving mixed file:', filePath);
 
     if (!fsSync.existsSync(filePath)) {
@@ -676,7 +670,6 @@ exports.serveMixedFile = async (req, res) => {
       return res.status(404).json({ message: 'Mixed file not found' });
     }
 
-    // Use absolute path with res.sendFile
     res.sendFile(path.resolve(filePath));
   } catch (error) {
     console.error('Error serving mixed file:', error);
@@ -686,7 +679,7 @@ exports.serveMixedFile = async (req, res) => {
 
 exports.serveProcessedFile = async (req, res) => {
   try {
-    const filePath = path.join(__dirname, '../uploads/processed', req.params.filename);
+    const filePath = path.join(PROCESSED_DIR, req.params.filename);
     console.log('Serving processed file:', filePath);
 
     if (!fsSync.existsSync(filePath)) {
@@ -694,7 +687,6 @@ exports.serveProcessedFile = async (req, res) => {
       return res.status(404).json({ message: 'Processed file not found' });
     }
 
-    // Use absolute path with res.sendFile
     res.sendFile(path.resolve(filePath));
   } catch (error) {
     console.error('Error serving processed file:', error);
@@ -704,7 +696,7 @@ exports.serveProcessedFile = async (req, res) => {
 
 exports.downloadMixByFilename = async (req, res) => {
   try {
-    const filePath = path.join(__dirname, '../uploads/mixed', req.params.filename);
+    const filePath = path.join(MIXED_DIR, req.params.filename);
     console.log('Downloading mix by filename:', {
       filename: req.params.filename,
       filePath
