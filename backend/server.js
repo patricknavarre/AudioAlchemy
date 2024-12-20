@@ -64,9 +64,12 @@ console.log('Attempting to connect to MongoDB with URI:', process.env.MONGODB_UR
 const mongooseOptions = {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 5000,
+  serverSelectionTimeoutMS: 30000,
   socketTimeoutMS: 45000,
-  family: 4
+  family: 4,
+  retryWrites: true,
+  w: 'majority',
+  dbName: 'audioalchemy'
 };
 
 mongoose.connect(process.env.MONGODB_URI, mongooseOptions)
@@ -76,7 +79,8 @@ mongoose.connect(process.env.MONGODB_URI, mongooseOptions)
     console.log('MongoDB connection details:', {
       host: mongoose.connection.host,
       port: mongoose.connection.port,
-      name: mongoose.connection.name
+      name: mongoose.connection.name,
+      models: Object.keys(mongoose.models)
     });
   })
   .catch(err => {
@@ -84,7 +88,8 @@ mongoose.connect(process.env.MONGODB_URI, mongooseOptions)
       message: err.message,
       code: err.code,
       name: err.name,
-      stack: err.stack
+      stack: err.stack,
+      uri: process.env.MONGODB_URI ? 'URI exists' : 'URI missing'
     });
   });
 
