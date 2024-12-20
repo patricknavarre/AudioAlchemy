@@ -48,19 +48,43 @@ export default function ProjectCreate() {
     setUploadProgress(0);
 
     try {
+      if (!files || files.length === 0) {
+        setError('Please select at least one audio file');
+        setLoading(false);
+        return;
+      }
+
       const formData = new FormData();
       formData.append('name', name);
       formData.append('mixStyle', mixStyle);
       
-      Array.from(files).forEach(file => {
+      console.log('Files to upload:', {
+        count: files.length,
+        files: Array.from(files).map(f => ({
+          name: f.name,
+          type: f.type,
+          size: f.size
+        }))
+      });
+
+      Array.from(files).forEach((file, index) => {
+        console.log(`Appending file ${index + 1}:`, {
+          name: file.name,
+          type: file.type,
+          size: file.size
+        });
         formData.append('stems', file);
       });
 
-      console.log('Creating project with:', {
-        name,
-        mixStyle,
-        filesCount: files.length
-      });
+      // Log the FormData contents
+      console.log('FormData entries:', Array.from(formData.entries()).map(([key, value]) => ({
+        key,
+        value: value instanceof File ? {
+          name: value.name,
+          type: value.type,
+          size: value.size
+        } : value
+      })));
 
       const response = await axios.post(
         `${import.meta.env.VITE_API_URL}/api/projects`,
@@ -80,7 +104,28 @@ export default function ProjectCreate() {
       console.log('Project created:', response.data);
       navigate(`/projects/${response.data._id}`);
     } catch (err) {
-      console.error('Project creation error:', err);
+      console.error('Project creation error:', {
+        message: err.message,
+        response: {
+          status: err.response?.status,
+          statusText: err.response?.statusText,
+          data: err.response?.data
+        },
+        request: {
+          method: err.config?.method,
+          url: err.config?.url,
+          headers: err.config?.headers,
+          data: err.config?.data instanceof FormData ? 
+            Array.from(err.config.data.entries()).map(([key, value]) => ({
+              key,
+              value: value instanceof File ? {
+                name: value.name,
+                type: value.type,
+                size: value.size
+              } : value
+            })) : err.config?.data
+        }
+      });
       setError(err.response?.data?.message || 'Error creating project');
     } finally {
       setLoading(false);

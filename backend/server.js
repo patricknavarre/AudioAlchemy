@@ -78,7 +78,22 @@ dirs.forEach(dir => {
 });
 
 // Database connection
-console.log('Attempting to connect to MongoDB with URI:', process.env.MONGODB_URI ? '[URI exists]' : '[URI missing]');
+console.log('Environment check:', {
+  nodeEnv: process.env.NODE_ENV,
+  jwtSecret: process.env.JWT_SECRET ? '[exists]' : '[missing]',
+  mongoUri: process.env.MONGODB_URI ? '[exists]' : '[missing]',
+  port: process.env.PORT || 5000
+});
+
+if (!process.env.MONGODB_URI) {
+  console.error('MONGODB_URI is not set in environment variables');
+  process.exit(1);
+}
+
+if (!process.env.JWT_SECRET) {
+  console.error('JWT_SECRET is not set in environment variables');
+  process.exit(1);
+}
 
 const mongooseOptions = {
   useNewUrlParser: true,
@@ -88,7 +103,7 @@ const mongooseOptions = {
   family: 4,
   retryWrites: true,
   w: 'majority',
-  dbName: 'audioalchemy'
+  dbName: 'itMix'
 };
 
 // Initialize server after MongoDB connects
@@ -115,30 +130,6 @@ const initializeServer = async () => {
     app.use('/api/auth', require('./routes/auth'));
     app.use('/api/projects', require('./routes/projects'));
     app.use('/api/templates', require('./routes/templates'));
-
-    // Rest of your route handlers...
-    // [Previous route handlers for audio files remain the same]
-
-    // Error handling middleware
-    app.use((err, req, res, next) => {
-      console.error('Global error handler:', {
-        error: err.message,
-        stack: err.stack,
-        name: err.name,
-        code: err.code,
-        mongoState: mongoose.connection.readyState,
-        headers: req.headers,
-        method: req.method,
-        path: req.path,
-        query: req.query,
-        body: req.method === 'POST' ? req.body : undefined
-      });
-      res.status(500).json({ 
-        message: 'Something broke!', 
-        error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
-        mongoState: mongoose.connection.readyState
-      });
-    });
 
     // Start server
     const PORT = process.env.PORT || 5000;

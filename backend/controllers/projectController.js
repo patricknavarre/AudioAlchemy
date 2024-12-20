@@ -110,11 +110,13 @@ exports.createProject = async (req, res) => {
       userId: req.userId,
       headers: {
         ...req.headers,
-        authorization: req.headers.authorization ? '[exists]' : '[missing]'
+        authorization: req.headers.authorization ? '[exists]' : '[missing]',
+        'content-type': req.headers['content-type']
       },
       method: req.method,
       path: req.path,
-      mongoState: mongoose.connection.readyState
+      mongoState: mongoose.connection.readyState,
+      uploadDir: path.join(__dirname, '../uploads/stems')
     });
 
     // Ensure directories exist
@@ -130,7 +132,9 @@ exports.createProject = async (req, res) => {
             code: err.code,
             name: err.name,
             stack: err.stack,
-            mongoState: mongoose.connection.readyState
+            mongoState: mongoose.connection.readyState,
+            multerError: err instanceof multer.MulterError,
+            headers: req.headers
           });
           reject(err);
         } else {
@@ -140,8 +144,11 @@ exports.createProject = async (req, res) => {
               originalname: f.originalname,
               path: f.path,
               size: f.size,
-              exists: fsSync.existsSync(f.path)
-            })) : []
+              exists: fsSync.existsSync(f.path),
+              stats: fsSync.existsSync(f.path) ? fsSync.statSync(f.path) : null
+            })) : [],
+            body: req.body,
+            uploadDir: path.join(__dirname, '../uploads/stems')
           });
           resolve();
         }
@@ -156,6 +163,10 @@ exports.createProject = async (req, res) => {
     // Process files
     const processedDir = path.join(__dirname, '../uploads/processed');
     console.log('Processing files in directory:', processedDir);
+    
+    // Ensure processed directory exists
+    await fs.mkdir(processedDir, { recursive: true });
+    
     const processedFiles = await audioProcessor.processAudioFiles(req.files, processedDir);
     console.log('Files processed:', {
       count: processedFiles.length,
@@ -165,6 +176,10 @@ exports.createProject = async (req, res) => {
         exists: {
           original: fsSync.existsSync(f.originalPath),
           processed: fsSync.existsSync(f.processedPath)
+        },
+        stats: {
+          original: fsSync.existsSync(f.originalPath) ? fsSync.statSync(f.originalPath) : null,
+          processed: fsSync.existsSync(f.processedPath) ? fsSync.statSync(f.processedPath) : null
         }
       }))
     });
@@ -187,7 +202,16 @@ exports.createProject = async (req, res) => {
       status: 'uploading'
     };
 
-    console.log('Creating project with data:', JSON.stringify(projectData, null, 2));
+    console.log('Creating project with data:', {
+      ...projectData,
+      files: projectData.files.map(f => ({
+        ...f,
+        exists: {
+          original: fsSync.existsSync(f.originalPath),
+          processed: fsSync.existsSync(f.processedPath)
+        }
+      }))
+    });
 
     const project = new Project(projectData);
     console.log('Project model created:', {
@@ -202,7 +226,15 @@ exports.createProject = async (req, res) => {
       id: savedProject._id,
       name: savedProject.name,
       filesCount: savedProject.files.length,
-      mongoState: mongoose.connection.readyState
+      mongoState: mongoose.connection.readyState,
+      files: savedProject.files.map(f => ({
+        originalPath: f.originalPath,
+        processedPath: f.processedPath,
+        exists: {
+          original: fsSync.existsSync(f.originalPath),
+          processed: fsSync.existsSync(f.processedPath)
+        }
+      }))
     });
 
     res.status(201).json(savedProject);
@@ -213,8 +245,25 @@ exports.createProject = async (req, res) => {
       stack: error.stack,
       name: error.name,
       code: error.code,
-      mongoState: mongoose.connection.readyState
+      mongoState: mongoose.connection.readyState,
+      multerError: error instanceof multer.MulterError,
+      headers: req.headers,
+      body: req.body,
+      files: req.files ? req.files.map(f => ({
+        originalname: f.originalname,
+        path: f.path,
+        exists: fsSync.existsSync(f.path)
+      })) : []
     });
+    
+    if (error instanceof multer.MulterError) {
+      return res.status(400).json({
+        message: 'File upload error',
+        error: error.message,
+        code: error.code
+      });
+    }
+    
     res.status(500).json({ 
       message: 'Error creating project',
       error: error.message,
