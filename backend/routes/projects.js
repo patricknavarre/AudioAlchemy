@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const projectController = require('../controllers/projectController');
 const Project = require('../models/Project');
 const path = require('path');
+const fs = require('fs');
 
 // Debug middleware for all project routes
 router.use((req, res, next) => {
@@ -22,34 +23,51 @@ router.use((req, res, next) => {
   next();
 });
 
-// Test route - no auth required for testing
-router.post('/test-upload', projectController.createProject);
-router.get('/test/:id', async (req, res) => {
-  try {
-    const project = await Project.findById(req.params.id);
-    if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
-    }
-    res.json(project);
-  } catch (error) {
-    console.error('Error fetching test project:', error);
-    res.status(500).json({ message: 'Error fetching project', error: error.message });
-  }
-});
-
-// Protected routes
+// Project routes
 router.post('/', auth, projectController.createProject);
 router.get('/', auth, projectController.getProjects);
 router.get('/:id', auth, projectController.getProject);
-router.post('/:id/render', auth, projectController.renderMix);
+router.put('/:id/mix-settings', auth, projectController.updateMixSettings);
 router.post('/:id/mix', auth, projectController.mixProject);
-
-// File serving routes - these need to be before the :id routes to avoid conflicts
-router.get('/mixed/:filename', auth, projectController.serveMixedFile);
-router.get('/processed/:filename', auth, projectController.serveProcessedFile);
-router.get('/download/mixed/:filename', auth, projectController.downloadMixByFilename);
-
-// Project-specific download route
 router.get('/:id/download', auth, projectController.downloadMix);
+
+// File serving routes
+router.get('/processed/:filename', (req, res) => {
+  const filePath = path.join(__dirname, '../uploads/processed', req.params.filename);
+  console.log('Serving processed file:', {
+    requestedPath: filePath,
+    exists: fs.existsSync(filePath)
+  });
+  if (fs.existsSync(filePath)) {
+    res.sendFile(path.resolve(filePath));
+  } else {
+    res.status(404).json({ message: 'File not found' });
+  }
+});
+
+router.get('/mixed/:filename', (req, res) => {
+  const filePath = path.join(__dirname, '../uploads/mixed', req.params.filename);
+  console.log('Serving mixed file:', {
+    requestedPath: filePath,
+    exists: fs.existsSync(filePath)
+  });
+  if (fs.existsSync(filePath)) {
+    res.sendFile(path.resolve(filePath));
+  } else {
+    res.status(404).json({ message: 'File not found' });
+  }
+});
+
+// Error handling middleware
+router.use((err, req, res, next) => {
+  console.error('Project route error:', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    headers: req.headers
+  });
+  res.status(500).json({ message: err.message });
+});
 
 module.exports = router; 

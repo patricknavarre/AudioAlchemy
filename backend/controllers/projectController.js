@@ -53,7 +53,8 @@ const storage = multer.diskStorage({
         originalname: file.originalname,
         encoding: file.encoding,
         mimetype: file.mimetype
-      }
+      },
+      headers: req.headers
     });
 
     const uploadDir = path.join(__dirname, '../uploads/stems');
@@ -102,20 +103,15 @@ const upload = multer({
         originalname: file.originalname,
         encoding: file.encoding,
         mimetype: file.mimetype
-      }
+      },
+      headers: req.headers
     });
 
-    const allowedTypes = ['.wav', '.mp3', '.aif', '.aiff'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    console.log('Checking file:', {
-      originalname: file.originalname,
-      extension: ext,
-      allowed: allowedTypes.includes(ext)
-    });
-    if (allowedTypes.includes(ext)) {
+    // Accept any audio file type for now
+    if (file.mimetype.startsWith('audio/')) {
       cb(null, true);
     } else {
-      cb(new Error(`Invalid file type: ${ext}. Only WAV, MP3, and AIFF files are allowed.`));
+      cb(new Error(`Invalid file type: ${file.mimetype}. Only audio files are allowed.`));
     }
   },
   limits: {
@@ -138,27 +134,8 @@ exports.createProject = async (req, res) => {
       method: req.method,
       path: req.path,
       mongoState: mongoose.connection.readyState,
-      uploadDir: path.join(__dirname, '../uploads/stems'),
-      tempDir: os.tmpdir(),
-      diskSpace: {
-        free: fs.statfsSync(os.tmpdir()).bfree * fs.statfsSync(os.tmpdir()).bsize,
-        total: fs.statfsSync(os.tmpdir()).blocks * fs.statfsSync(os.tmpdir()).bsize
-      }
+      uploadDir: path.join(__dirname, '../uploads/stems')
     });
-
-    // Check if upload directory is writable
-    const uploadDir = path.join(__dirname, '../uploads/stems');
-    try {
-      fs.accessSync(uploadDir, fs.constants.W_OK);
-      console.log('Upload directory is writable:', uploadDir);
-    } catch (error) {
-      console.error('Upload directory is not writable:', {
-        dir: uploadDir,
-        error: error.message,
-        code: error.code
-      });
-      return res.status(500).json({ message: 'Server configuration error - upload directory not writable' });
-    }
 
     // Handle file upload with detailed logging
     await new Promise((resolve, reject) => {
@@ -171,11 +148,7 @@ exports.createProject = async (req, res) => {
             stack: err.stack,
             mongoState: mongoose.connection.readyState,
             multerError: err instanceof multer.MulterError,
-            headers: req.headers,
-            diskSpace: {
-              free: fs.statfsSync(os.tmpdir()).bfree * fs.statfsSync(os.tmpdir()).bsize,
-              total: fs.statfsSync(os.tmpdir()).blocks * fs.statfsSync(os.tmpdir()).bsize
-            }
+            headers: req.headers
           });
           reject(err);
         } else {
@@ -186,11 +159,9 @@ exports.createProject = async (req, res) => {
               path: f.path,
               size: f.size,
               exists: fs.existsSync(f.path),
-              stats: fs.existsSync(f.path) ? fs.statSync(f.path) : null,
-              permissions: fs.existsSync(f.path) ? (fs.statSync(f.path).mode & parseInt('777', 8)).toString(8) : null
+              stats: fs.existsSync(f.path) ? fs.statSync(f.path) : null
             })) : [],
-            body: req.body,
-            uploadDir: path.join(__dirname, '../uploads/stems')
+            body: req.body
           });
           resolve();
         }
