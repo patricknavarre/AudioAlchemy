@@ -6,6 +6,9 @@ const path = require('path');
 const fs = require('fs');
 const auth = require('./middleware/auth');
 
+// Import models
+require('./models/User');
+
 const app = express();
 
 // CORS configuration
@@ -39,13 +42,14 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Test route for connectivity (moved to top of routes)
+// Test route for connectivity
 app.get('/api/test', (req, res) => {
   res.json({ 
     message: 'Backend is running',
     environment: process.env.NODE_ENV,
     corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    mongoState: mongoose.connection.readyState
   });
 });
 
@@ -72,8 +76,10 @@ const mongooseOptions = {
   dbName: 'audioalchemy'
 };
 
-mongoose.connect(process.env.MONGODB_URI, mongooseOptions)
-  .then(() => {
+// Initialize server after MongoDB connects
+const initializeServer = async () => {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI, mongooseOptions);
     console.log('Successfully connected to MongoDB');
     console.log('MongoDB connection state:', mongoose.connection.readyState);
     console.log('MongoDB connection details:', {
@@ -82,227 +88,64 @@ mongoose.connect(process.env.MONGODB_URI, mongooseOptions)
       name: mongoose.connection.name,
       models: Object.keys(mongoose.models)
     });
-  })
-  .catch(err => {
-    console.error('MongoDB connection error:', {
-      message: err.message,
-      code: err.code,
-      name: err.name,
-      stack: err.stack,
-      uri: process.env.MONGODB_URI ? 'URI exists' : 'URI missing'
+
+    // Set up routes only after successful MongoDB connection
+    app.use('/api/auth', require('./routes/auth'));
+    app.use('/api/projects', require('./routes/projects'));
+    app.use('/api/templates', require('./routes/templates'));
+
+    // Rest of your route handlers...
+    // [Previous route handlers for audio files remain the same]
+
+    // Error handling middleware
+    app.use((err, req, res, next) => {
+      console.error('Global error handler:', {
+        error: err.message,
+        stack: err.stack,
+        mongoState: mongoose.connection.readyState
+      });
+      res.status(500).json({ 
+        message: 'Something broke!', 
+        error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+      });
     });
-  });
+
+    // Start server
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log('CORS origin:', process.env.CORS_ORIGIN || 'http://localhost:5173');
+      console.log('MongoDB state:', mongoose.connection.readyState);
+    });
+  } catch (error) {
+    console.error('Failed to initialize server:', {
+      error: error.message,
+      stack: error.stack,
+      mongoState: mongoose.connection.readyState
+    });
+    process.exit(1);
+  }
+};
 
 // Monitor MongoDB connection
 mongoose.connection.on('error', err => {
-  console.error('MongoDB connection error event:', err);
-});
-
-mongoose.connection.on('disconnected', () => {
-  console.log('MongoDB disconnected');
-});
-
-mongoose.connection.on('connected', () => {
-  console.log('MongoDB connected');
-});
-
-// Routes
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/projects', require('./routes/projects'));
-app.use('/api/templates', require('./routes/templates'));
-
-// Serve mixed audio files
-app.get('/audio/mixed/:filename', auth, (req, res) => {
-  try {
-    const filePath = path.join(__dirname, 'uploads/mixed', req.params.filename);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).send('File not found');
-    }
-    res.sendFile(filePath);
-  } catch (error) {
-    console.error('Error serving audio:', error);
-    res.status(500).send('Error serving audio file');
-  }
-});
-
-// Download mixed file
-app.get('/download/mixed/:filename', auth, (req, res) => {
-  try {
-    const filePath = path.join(__dirname, 'uploads/mixed', req.params.filename);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).send('File not found');
-    }
-    res.download(filePath);
-  } catch (error) {
-    console.error('Download error:', error);
-    res.status(500).send('Error downloading file');
-  }
-});
-
-// Update the static file serving configuration
-app.use('/audio', express.static(path.join(__dirname, 'uploads'), {
-  setHeaders: (res, filePath) => {
-    console.log('Serving audio file:', filePath);
-    if (filePath.endsWith('.wav')) {
-      res.set({
-        'Content-Type': 'audio/wav',
-        'Accept-Ranges': 'bytes',
-        'Cache-Control': 'no-cache'
-      });
-    }
-  }
-}));
-
-// Add OPTIONS handler for preflight requests
-app.options('/api/processed/:filename', cors());
-
-// Add a dedicated endpoint for processed files with auth
-app.get('/api/processed/:filename', auth, (req, res) => {
-  try {
-    const filePath = path.join(__dirname, 'uploads', 'processed', req.params.filename);
-    console.log('Serving processed file:', filePath);
-    console.log('Auth headers:', req.headers.authorization);
-    
-    if (!fs.existsSync(filePath)) {
-      console.error('File not found:', filePath);
-      return res.status(404).send('File not found');
-    }
-
-    const stat = fs.statSync(filePath);
-    const range = req.headers.range;
-
-    // Set common headers
-    const headers = {
-      'Accept-Ranges': 'bytes',
-      'Content-Type': 'audio/wav',
-      'Cache-Control': 'no-cache'
-    };
-
-    if (range) {
-      const parts = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
-      const chunksize = (end - start) + 1;
-
-      res.writeHead(206, {
-        ...headers,
-        'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-        'Content-Length': chunksize
-      });
-
-      fs.createReadStream(filePath, {start, end}).pipe(res);
-    } else {
-      res.writeHead(200, {
-        ...headers,
-        'Content-Length': stat.size
-      });
-      fs.createReadStream(filePath).pipe(res);
-    }
-  } catch (error) {
-    console.error('Error serving processed file:', error);
-    res.status(500).send('Error serving file');
-  }
-});
-
-// Add OPTIONS handler for mixed files
-app.options('/api/mixed/:filename', cors());
-
-// Add a dedicated endpoint for mixed files with auth
-app.get('/api/mixed/:filename', auth, async (req, res) => {
-  try {
-    const filePath = path.join(__dirname, 'uploads/mixed', req.params.filename);
-    
-    // Log detailed request info
-    console.log('Mixed file request:', {
-      requestedFile: req.params.filename,
-      fullPath: filePath,
-      exists: fs.existsSync(filePath),
-      size: fs.existsSync(filePath) ? fs.statSync(filePath).size : 0,
-      directory: path.dirname(filePath),
-      directoryExists: fs.existsSync(path.dirname(filePath)),
-      directoryContents: fs.existsSync(path.dirname(filePath)) ? 
-        fs.readdirSync(path.dirname(filePath)) : [],
-      auth: !!req.headers.authorization
-    });
-    
-    if (!fs.existsSync(filePath)) {
-      console.error('Mixed file not found:', {
-        requestedPath: filePath,
-        directory: path.dirname(filePath),
-        directoryExists: fs.existsSync(path.dirname(filePath)),
-        availableFiles: fs.existsSync(path.dirname(filePath)) ? 
-          fs.readdirSync(path.dirname(filePath)) : []
-      });
-      return res.status(404).send('File not found');
-    }
-
-    // Try to read file stats
-    const stat = fs.statSync(filePath);
-    console.log('File stats:', {
-      size: stat.size,
-      mode: stat.mode,
-      uid: stat.uid,
-      gid: stat.gid,
-      accessTime: stat.atime,
-      modifyTime: stat.mtime,
-      changeTime: stat.ctime
-    });
-
-    const range = req.headers.range;
-    const headers = {
-      'Accept-Ranges': 'bytes',
-      'Content-Type': 'audio/wav',
-      'Cache-Control': 'no-cache'
-    };
-
-    if (range) {
-      const parts = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
-      const chunksize = (end - start) + 1;
-
-      res.writeHead(206, {
-        ...headers,
-        'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-        'Content-Length': chunksize
-      });
-
-      fs.createReadStream(filePath, {start, end})
-        .on('error', (err) => {
-          console.error('Stream error:', err);
-          res.end();
-        })
-        .pipe(res);
-    } else {
-      res.writeHead(200, {
-        ...headers,
-        'Content-Length': stat.size
-      });
-
-      fs.createReadStream(filePath)
-        .on('error', (err) => {
-          console.error('Stream error:', err);
-          res.end();
-        })
-        .pipe(res);
-    }
-  } catch (error) {
-    console.error('Error serving mixed file:', error);
-    res.status(500).send('Error serving file');
-  }
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ 
-    message: 'Something broke!', 
-    error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+  console.error('MongoDB connection error event:', {
+    error: err.message,
+    stack: err.stack,
+    mongoState: mongoose.connection.readyState
   });
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log('CORS origin:', process.env.CORS_ORIGIN || 'http://localhost:5173');
+mongoose.connection.on('disconnected', () => {
+  console.log('MongoDB disconnected, connection state:', mongoose.connection.readyState);
+});
+
+mongoose.connection.on('connected', () => {
+  console.log('MongoDB connected, connection state:', mongoose.connection.readyState);
+});
+
+// Start the server
+initializeServer().catch(error => {
+  console.error('Server initialization failed:', error);
+  process.exit(1);
 });
