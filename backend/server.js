@@ -50,9 +50,36 @@ app.use(cors({
   maxAge: 86400 // 24 hours
 }));
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Increase payload size limits for file uploads
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Add OPTIONS handling for preflight requests
+app.options('*', cors());
+
+// Add error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Global error handler:', {
+    error: err.message,
+    stack: err.stack,
+    name: err.name,
+    code: err.code,
+    mongoState: mongoose.connection.readyState,
+    headers: req.headers,
+    method: req.method,
+    path: req.path,
+    query: req.query,
+    body: req.method === 'POST' ? req.body : undefined
+  });
+  res.status(500).json({ 
+    message: 'Something broke!', 
+    error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
+    mongoState: mongoose.connection.readyState
+  });
+});
 
 // Test route for connectivity
 app.get('/api/test', (req, res) => {
@@ -68,12 +95,55 @@ app.get('/api/test', (req, res) => {
   });
 });
 
-// Create required directories
+// Create required directories with permission checks
 const dirs = ['uploads', 'uploads/stems', 'uploads/processed', 'uploads/mixed'];
 dirs.forEach(dir => {
   const dirPath = path.join(__dirname, dir);
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
+  try {
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true, mode: 0o755 });
+      console.log(`Created directory: ${dirPath}`);
+    }
+    // Check if directory is writable
+    fs.accessSync(dirPath, fs.constants.W_OK);
+    console.log(`Directory ${dirPath} exists and is writable`);
+    
+    // Log directory permissions
+    const stats = fs.statSync(dirPath);
+    console.log(`Directory ${dirPath} permissions:`, {
+      mode: stats.mode,
+      uid: stats.uid,
+      gid: stats.gid,
+      isDirectory: stats.isDirectory(),
+      isWritable: Boolean(stats.mode & fs.constants.W_OK)
+    });
+  } catch (error) {
+    console.error(`Error with directory ${dirPath}:`, {
+      error: error.message,
+      code: error.code,
+      stack: error.stack
+    });
+  }
+});
+
+// Add temporary file upload endpoint for testing
+app.post('/api/test-upload', express.raw({ type: 'application/octet-stream', limit: '10mb' }), (req, res) => {
+  try {
+    const testFile = path.join(__dirname, 'uploads', 'test.txt');
+    fs.writeFileSync(testFile, 'Test file content');
+    console.log('Test file created successfully:', {
+      path: testFile,
+      exists: fs.existsSync(testFile),
+      stats: fs.statSync(testFile)
+    });
+    res.json({ message: 'Test file created successfully' });
+  } catch (error) {
+    console.error('Test file creation error:', {
+      error: error.message,
+      code: error.code,
+      stack: error.stack
+    });
+    res.status(500).json({ error: error.message });
   }
 });
 

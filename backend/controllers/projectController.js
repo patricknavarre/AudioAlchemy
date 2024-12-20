@@ -6,6 +6,7 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const audioProcessor = require('../services/audioProcessor');
 const mongoose = require('mongoose');
+const os = require('os');
 
 // Ensure required directories exist
 const ensureDirectories = async () => {
@@ -116,14 +117,29 @@ exports.createProject = async (req, res) => {
       method: req.method,
       path: req.path,
       mongoState: mongoose.connection.readyState,
-      uploadDir: path.join(__dirname, '../uploads/stems')
+      uploadDir: path.join(__dirname, '../uploads/stems'),
+      tempDir: os.tmpdir(),
+      diskSpace: {
+        free: fs.statfsSync(os.tmpdir()).bfree * fs.statfsSync(os.tmpdir()).bsize,
+        total: fs.statfsSync(os.tmpdir()).blocks * fs.statfsSync(os.tmpdir()).bsize
+      }
     });
 
-    // Ensure directories exist
-    await ensureDirectories();
-    console.log('Directories verified');
+    // Check if upload directory is writable
+    const uploadDir = path.join(__dirname, '../uploads/stems');
+    try {
+      fs.accessSync(uploadDir, fs.constants.W_OK);
+      console.log('Upload directory is writable:', uploadDir);
+    } catch (error) {
+      console.error('Upload directory is not writable:', {
+        dir: uploadDir,
+        error: error.message,
+        code: error.code
+      });
+      return res.status(500).json({ message: 'Server configuration error - upload directory not writable' });
+    }
 
-    // Handle file upload
+    // Handle file upload with detailed logging
     await new Promise((resolve, reject) => {
       upload(req, res, (err) => {
         if (err) {
@@ -134,7 +150,11 @@ exports.createProject = async (req, res) => {
             stack: err.stack,
             mongoState: mongoose.connection.readyState,
             multerError: err instanceof multer.MulterError,
-            headers: req.headers
+            headers: req.headers,
+            diskSpace: {
+              free: fs.statfsSync(os.tmpdir()).bfree * fs.statfsSync(os.tmpdir()).bsize,
+              total: fs.statfsSync(os.tmpdir()).blocks * fs.statfsSync(os.tmpdir()).bsize
+            }
           });
           reject(err);
         } else {
@@ -144,8 +164,9 @@ exports.createProject = async (req, res) => {
               originalname: f.originalname,
               path: f.path,
               size: f.size,
-              exists: fsSync.existsSync(f.path),
-              stats: fsSync.existsSync(f.path) ? fsSync.statSync(f.path) : null
+              exists: fs.existsSync(f.path),
+              stats: fs.existsSync(f.path) ? fs.statSync(f.path) : null,
+              permissions: fs.existsSync(f.path) ? (fs.statSync(f.path).mode & parseInt('777', 8)).toString(8) : null
             })) : [],
             body: req.body,
             uploadDir: path.join(__dirname, '../uploads/stems')
@@ -252,8 +273,13 @@ exports.createProject = async (req, res) => {
       files: req.files ? req.files.map(f => ({
         originalname: f.originalname,
         path: f.path,
-        exists: fsSync.existsSync(f.path)
-      })) : []
+        exists: fs.existsSync(f.path),
+        stats: fs.existsSync(f.path) ? fs.statSync(f.path) : null
+      })) : [],
+      diskSpace: {
+        free: fs.statfsSync(os.tmpdir()).bfree * fs.statfsSync(os.tmpdir()).bsize,
+        total: fs.statfsSync(os.tmpdir()).blocks * fs.statfsSync(os.tmpdir()).bsize
+      }
     });
     
     if (error instanceof multer.MulterError) {
