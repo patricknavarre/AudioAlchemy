@@ -150,8 +150,40 @@ exports.createProject = async (req, res) => {
       method: req.method,
       path: req.path,
       mongoState: mongoose.connection.readyState,
-      uploadDir: path.join(__dirname, '../uploads/stems')
+      uploadDir: STEMS_DIR,
+      tempDir: {
+        path: '/tmp',
+        exists: fs.existsSync('/tmp'),
+        writable: fs.existsSync('/tmp') ? Boolean(fs.statSync('/tmp').mode & fs.constants.W_OK) : false,
+        freeSpace: fs.existsSync('/tmp') ? fs.statfsSync('/tmp').bfree * fs.statfsSync('/tmp').bsize : 0
+      }
     });
+
+    // Verify upload directory exists and is writable
+    try {
+      await fs.mkdir(STEMS_DIR, { recursive: true, mode: 0o777 });
+      await fs.access(STEMS_DIR, fs.constants.W_OK);
+      const stats = await fs.stat(STEMS_DIR);
+      console.log('Upload directory verified:', {
+        path: STEMS_DIR,
+        mode: stats.mode.toString(8),
+        uid: stats.uid,
+        gid: stats.gid,
+        isDirectory: stats.isDirectory(),
+        isWritable: Boolean(stats.mode & fs.constants.W_OK)
+      });
+    } catch (dirError) {
+      console.error('Upload directory error:', {
+        error: dirError.message,
+        code: dirError.code,
+        stack: dirError.stack,
+        path: STEMS_DIR
+      });
+      return res.status(500).json({ 
+        message: 'Server configuration error - upload directory not accessible',
+        error: dirError.message
+      });
+    }
 
     // Handle file upload with detailed logging
     await new Promise((resolve, reject) => {
@@ -164,7 +196,13 @@ exports.createProject = async (req, res) => {
             stack: err.stack,
             mongoState: mongoose.connection.readyState,
             multerError: err instanceof multer.MulterError,
-            headers: req.headers
+            headers: req.headers,
+            tempDir: {
+              path: '/tmp',
+              exists: fs.existsSync('/tmp'),
+              writable: fs.existsSync('/tmp') ? Boolean(fs.statSync('/tmp').mode & fs.constants.W_OK) : false,
+              freeSpace: fs.existsSync('/tmp') ? fs.statfsSync('/tmp').bfree * fs.statfsSync('/tmp').bsize : 0
+            }
           });
           reject(err);
         } else {
@@ -175,9 +213,11 @@ exports.createProject = async (req, res) => {
               path: f.path,
               size: f.size,
               exists: fs.existsSync(f.path),
-              stats: fs.existsSync(f.path) ? fs.statSync(f.path) : null
+              stats: fs.existsSync(f.path) ? fs.statSync(f.path) : null,
+              permissions: fs.existsSync(f.path) ? (fs.statSync(f.path).mode & parseInt('777', 8)).toString(8) : null
             })) : [],
-            body: req.body
+            body: req.body,
+            uploadDir: STEMS_DIR
           });
           resolve();
         }
@@ -270,23 +310,41 @@ exports.createProject = async (req, res) => {
 
   } catch (error) {
     console.error('Project creation error:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name,
-      code: error.code,
-      mongoState: mongoose.connection.readyState,
-      multerError: error instanceof multer.MulterError,
-      headers: req.headers,
-      body: req.body,
-      files: req.files ? req.files.map(f => ({
-        originalname: f.originalname,
-        path: f.path,
-        exists: fs.existsSync(f.path),
-        stats: fs.existsSync(f.path) ? fs.statSync(f.path) : null
-      })) : [],
-      diskSpace: {
-        free: fs.statfsSync(os.tmpdir()).bfree * fs.statfsSync(os.tmpdir()).bsize,
-        total: fs.statfsSync(os.tmpdir()).blocks * fs.statfsSync(os.tmpdir()).bsize
+      error: {
+        message: error.message,
+        name: error.name,
+        code: error.code,
+        stack: error.stack,
+        multerError: error instanceof multer.MulterError
+      },
+      request: {
+        method: req.method,
+        path: req.path,
+        headers: {
+          ...req.headers,
+          authorization: req.headers.authorization ? '[exists]' : '[missing]'
+        },
+        body: req.body,
+        files: req.files ? req.files.map(f => ({
+          originalname: f.originalname,
+          path: f.path,
+          exists: fs.existsSync(f.path),
+          stats: fs.existsSync(f.path) ? fs.statSync(f.path) : null
+        })) : []
+      },
+      system: {
+        mongoState: mongoose.connection.readyState,
+        tempDir: {
+          path: '/tmp',
+          exists: fs.existsSync('/tmp'),
+          writable: fs.existsSync('/tmp') ? Boolean(fs.statSync('/tmp').mode & fs.constants.W_OK) : false,
+          freeSpace: fs.existsSync('/tmp') ? fs.statfsSync('/tmp').bfree * fs.statfsSync('/tmp').bsize : 0
+        },
+        uploadDir: {
+          path: STEMS_DIR,
+          exists: fs.existsSync(STEMS_DIR),
+          writable: fs.existsSync(STEMS_DIR) ? Boolean(fs.statSync(STEMS_DIR).mode & fs.constants.W_OK) : false
+        }
       }
     });
     

@@ -20,9 +20,44 @@ const allowedOrigins = [
   'https://audioalchemy-frontend.vercel.app'
 ];
 
+// Add request logging middleware (add this before other middleware)
+app.use((req, res, next) => {
+  console.log('Incoming request:', {
+    method: req.method,
+    url: req.url,
+    path: req.path,
+    headers: {
+      ...req.headers,
+      authorization: req.headers.authorization ? '[exists]' : '[missing]'
+    },
+    query: req.query,
+    body: req.method === 'POST' ? req.body : undefined,
+    contentType: req.headers['content-type'],
+    contentLength: req.headers['content-length']
+  });
+  next();
+});
+
+// Add response logging middleware
+app.use((req, res, next) => {
+  const originalSend = res.send;
+  res.send = function(data) {
+    console.log('Response:', {
+      method: req.method,
+      url: req.url,
+      statusCode: res.statusCode,
+      contentType: res.get('Content-Type'),
+      contentLength: res.get('Content-Length')
+    });
+    return originalSend.call(this, data);
+  };
+  next();
+});
+
+// Update CORS configuration
 app.use(cors({
   origin: function(origin, callback) {
-    console.log('Incoming request from origin:', origin);
+    console.log('CORS check for origin:', origin);
     
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) {
@@ -30,37 +65,43 @@ app.use(cors({
       return callback(null, true);
     }
     
-    if (allowedOrigins.indexOf(origin) === -1) {
-      console.log('Origin not allowed by CORS:', origin);
-      console.log('Allowed origins:', allowedOrigins);
-      // During development, we'll allow all origins
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('Development mode - allowing unknown origin');
-        return callback(null, true);
-      }
-      console.log('Production mode - checking origin:', origin);
-      if (origin.includes('vercel.app') || origin.includes('render.com')) {
-        console.log('Allowing Vercel/Render domain:', origin);
-        return callback(null, true);
-      }
-      return callback(null, false);
+    // Allow all origins in development
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('Development mode - allowing all origins');
+      return callback(null, true);
     }
-    console.log('Origin allowed by CORS:', origin);
-    return callback(null, true);
+    
+    // In production, allow Vercel and Render domains
+    if (origin.includes('vercel.app') || origin.includes('render.com')) {
+      console.log('Allowing Vercel/Render domain:', origin);
+      return callback(null, true);
+    }
+    
+    // Check against allowed origins
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log('Origin allowed by CORS:', origin);
+      return callback(null, true);
+    }
+    
+    console.log('Origin not allowed by CORS:', origin);
+    return callback(new Error('Not allowed by CORS'));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
   credentials: true,
-  maxAge: 86400 // 24 hours
+  maxAge: 86400, // 24 hours
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 
 // Handle preflight requests
 app.options('*', cors());
 
-// Increase payload size limits for file uploads
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Update file upload limits
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+app.use(express.raw({ limit: '100mb' }));
 
 // Serve static files from uploads directory with CORS
 app.use('/uploads', (req, res, next) => {
@@ -100,20 +141,40 @@ app.get('/api/projects/mixed/:filename', (req, res) => {
 // Add error handling middleware
 app.use((err, req, res, next) => {
   console.error('Global error handler:', {
-    error: err.message,
-    stack: err.stack,
-    name: err.name,
-    code: err.code,
-    mongoState: mongoose.connection.readyState,
-    headers: req.headers,
-    method: req.method,
-    path: req.path,
-    query: req.query,
-    body: req.method === 'POST' ? req.body : undefined
+    error: {
+      message: err.message,
+      name: err.name,
+      code: err.code,
+      stack: err.stack
+    },
+    request: {
+      method: req.method,
+      url: req.url,
+      headers: {
+        ...req.headers,
+        authorization: req.headers.authorization ? '[exists]' : '[missing]'
+      },
+      body: req.method === 'POST' ? req.body : undefined
+    },
+    response: {
+      statusCode: res.statusCode,
+      headers: res._headers
+    },
+    system: {
+      nodeEnv: process.env.NODE_ENV,
+      mongoState: mongoose.connection.readyState,
+      tempDir: {
+        path: '/tmp',
+        exists: fs.existsSync('/tmp'),
+        writable: fs.existsSync('/tmp') ? Boolean(fs.statSync('/tmp').mode & fs.constants.W_OK) : false,
+        freeSpace: fs.existsSync('/tmp') ? fs.statfsSync('/tmp').bfree * fs.statfsSync('/tmp').bsize : 0
+      }
+    }
   });
-  res.status(500).json({ 
-    message: 'Something broke!', 
-    error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
+  
+  res.status(err.status || 500).json({ 
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
+    error: process.env.NODE_ENV === 'development' ? err : {},
     mongoState: mongoose.connection.readyState
   });
 });
