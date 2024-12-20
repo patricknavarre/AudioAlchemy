@@ -55,115 +55,64 @@ dirs.forEach(dir => {
 
 const app = express();
 
-// CORS configuration
-app.use(cors({
-  origin: true, // Allow all origins for now
-  credentials: true,
+// CORS configuration - must be first
+const corsOptions = {
+  origin: ['https://audio-alchemy-git-main-patricknavarres-projects.vercel.app', 'http://localhost:5173'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: [
-    'Origin',
-    'X-Requested-With',
-    'Content-Type',
-    'Accept',
-    'Authorization',
-    'Access-Control-Allow-Origin'
-  ],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 86400 // 24 hours
-}));
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
 
-// Handle preflight requests
-app.options('*', cors());
+app.use(cors(corsOptions));
 
-// Add headers to all responses
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.header('Access-Control-Allow-Credentials', true);
-  next();
-});
+// Pre-flight requests
+app.options('*', cors(corsOptions));
 
-// Update file upload limits
+// Body parsing middleware
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
-app.use(express.raw({ limit: '100mb' }));
 
-// Serve static files from uploads directory with CORS
-app.use('/uploads', (req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  next();
-}, express.static(UPLOAD_DIR));
+// Routes setup
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/projects', require('./routes/projects'));
+app.use('/api/templates', require('./routes/templates'));
 
-// Add routes for serving processed and mixed files
-app.get('/api/projects/processed/:filename', (req, res) => {
-  const filePath = path.join(PROCESSED_DIR, req.params.filename);
-  console.log('Serving processed file:', {
-    requestedPath: filePath,
-    exists: fs.existsSync(filePath)
-  });
-  if (fs.existsSync(filePath)) {
-    res.sendFile(path.resolve(filePath));
-  } else {
-    res.status(404).json({ message: 'File not found' });
-  }
-});
+// Static file serving
+app.use('/uploads', express.static(UPLOAD_DIR));
 
-app.get('/api/projects/mixed/:filename', (req, res) => {
-  const filePath = path.join(MIXED_DIR, req.params.filename);
-  console.log('Serving mixed file:', {
-    requestedPath: filePath,
-    exists: fs.existsSync(filePath)
-  });
-  if (fs.existsSync(filePath)) {
-    res.sendFile(path.resolve(filePath));
-  } else {
-    res.status(404).json({ message: 'File not found' });
-  }
-});
-
-// Add error handling middleware
+// Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Global error handler:', {
-    error: {
-      message: err.message,
-      name: err.name,
-      code: err.code,
-      stack: err.stack
-    },
-    request: {
-      method: req.method,
-      url: req.url,
-      headers: {
-        ...req.headers,
-        authorization: req.headers.authorization ? '[exists]' : '[missing]'
-      },
-      body: req.method === 'POST' ? req.body : undefined
-    },
-    response: {
-      statusCode: res.statusCode,
-      headers: res._headers
-    },
-    system: {
-      nodeEnv: process.env.NODE_ENV,
-      mongoState: mongoose.connection.readyState,
-      tempDir: {
-        path: '/tmp',
-        exists: fs.existsSync('/tmp'),
-        writable: fs.existsSync('/tmp') ? Boolean(fs.statSync('/tmp').mode & fs.constants.W_OK) : false,
-        freeSpace: fs.existsSync('/tmp') ? fs.statfsSync('/tmp').bfree * fs.statfsSync('/tmp').bsize : 0
-      }
-    }
+  console.error('Error:', {
+    message: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    headers: req.headers
   });
   
-  res.status(err.status || 500).json({ 
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? err : {},
-    mongoState: mongoose.connection.readyState
+  res.status(err.status || 500).json({
+    message: err.message || 'Internal Server Error',
+    status: err.status || 500
   });
 });
+
+// Initialize server after MongoDB connects
+const initializeServer = async () => {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI, mongooseOptions);
+    console.log('Connected to MongoDB');
+
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log('Environment:', process.env.NODE_ENV);
+    });
+  } catch (error) {
+    console.error('Server initialization failed:', error);
+    process.exit(1);
+  }
+};
 
 // Test route for connectivity
 app.get('/api/test', (req, res) => {
@@ -227,51 +176,6 @@ const mongooseOptions = {
   retryWrites: true,
   w: 'majority',
   dbName: 'itMix'
-};
-
-// Initialize server after MongoDB connects
-const initializeServer = async () => {
-  try {
-    console.log('Connecting to MongoDB with options:', {
-      ...mongooseOptions,
-      uri: process.env.MONGODB_URI ? '[URI exists]' : '[URI missing]'
-    });
-
-    await mongoose.connect(process.env.MONGODB_URI, mongooseOptions);
-    console.log('Successfully connected to MongoDB');
-    console.log('MongoDB connection state:', mongoose.connection.readyState);
-    console.log('MongoDB connection details:', {
-      host: mongoose.connection.host,
-      port: mongoose.connection.port,
-      name: mongoose.connection.name,
-      models: Object.keys(mongoose.models),
-      readyState: mongoose.connection.readyState,
-      collections: Object.keys(mongoose.connection.collections)
-    });
-
-    // Set up routes only after successful MongoDB connection
-    app.use('/api/auth', require('./routes/auth'));
-    app.use('/api/projects', require('./routes/projects'));
-    app.use('/api/templates', require('./routes/templates'));
-
-    // Start server
-    const PORT = process.env.PORT || 5000;
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log('CORS origin:', process.env.CORS_ORIGIN || 'http://localhost:5173');
-      console.log('MongoDB state:', mongoose.connection.readyState);
-      console.log('Environment:', process.env.NODE_ENV);
-    });
-  } catch (error) {
-    console.error('Failed to initialize server:', {
-      error: error.message,
-      stack: error.stack,
-      name: error.name,
-      code: error.code,
-      mongoState: mongoose.connection.readyState
-    });
-    process.exit(1);
-  }
 };
 
 // Monitor MongoDB connection
