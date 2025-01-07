@@ -188,15 +188,16 @@ exports.createProject = async (req, res) => {
         ...req.headers,
         authorization: req.headers.authorization ? "[exists]" : "[missing]",
         "content-type": req.headers["content-type"],
+        origin: req.headers.origin,
       },
     });
 
-    // Ensure directories exist
+    // Ensure directories exist with proper permissions
     await ensureDirectories();
 
     // Handle file upload with detailed logging
     await new Promise((resolve, reject) => {
-      upload(req, res, (err) => {
+      upload(req, res, async (err) => {
         if (err) {
           console.error("Upload error:", {
             message: err.message,
@@ -204,28 +205,52 @@ exports.createProject = async (req, res) => {
             name: err.name,
             stack: err.stack,
             multerError: err instanceof multer.MulterError,
+            headers: {
+              ...req.headers,
+              authorization: req.headers.authorization
+                ? "[exists]"
+                : "[missing]",
+            },
           });
           reject(err);
-        } else {
-          uploadedFiles = req.files || [];
-          console.log("Upload successful:", {
-            filesReceived: uploadedFiles.length,
-            files: uploadedFiles.map((f) => ({
-              originalname: f.originalname,
-              path: f.path,
-              size: f.size,
-            })),
-          });
-          resolve();
+          return;
         }
+
+        uploadedFiles = req.files || [];
+        if (!uploadedFiles.length) {
+          reject(new Error("No files received in request"));
+          return;
+        }
+
+        // Verify uploaded files exist and are accessible
+        for (const file of uploadedFiles) {
+          try {
+            await fs.access(file.path, fs.constants.R_OK);
+            const stats = await fs.stat(file.path);
+            console.log(`File verified: ${file.path}`, {
+              size: stats.size,
+              mode: stats.mode.toString(8),
+            });
+          } catch (error) {
+            console.error(`File verification failed: ${file.path}`, error);
+            reject(new Error(`File verification failed: ${file.originalname}`));
+            return;
+          }
+        }
+
+        console.log("Upload successful:", {
+          filesReceived: uploadedFiles.length,
+          files: uploadedFiles.map((f) => ({
+            originalname: f.originalname,
+            path: f.path,
+            size: f.size,
+          })),
+        });
+        resolve();
       });
     });
 
-    if (!uploadedFiles.length) {
-      throw new Error("No files uploaded");
-    }
-
-    // Process files
+    // Process files with verification
     const processedDir = PROCESSED_DIR;
     await fs.mkdir(processedDir, { recursive: true, mode: 0o777 });
 
@@ -234,14 +259,23 @@ exports.createProject = async (req, res) => {
       processedDir
     );
 
-    // Verify processed files exist
+    // Verify processed files
     for (const file of processedFiles) {
-      if (!fsSync.existsSync(file.processedPath)) {
-        throw new Error(`Processed file not found: ${file.processedPath}`);
+      try {
+        await fs.access(file.processedPath, fs.constants.R_OK);
+        const stats = await fs.stat(file.processedPath);
+        console.log(`Processed file verified: ${file.processedPath}`, {
+          size: stats.size,
+          mode: stats.mode.toString(8),
+        });
+      } catch (error) {
+        throw new Error(
+          `Processed file verification failed: ${file.processedPath}`
+        );
       }
     }
 
-    // Create project files array with proper structure and relative paths
+    // Create project files array
     const files = processedFiles.map((file) => ({
       originalPath: toRelativePath(file.originalPath),
       processedPath: toRelativePath(file.processedPath),
@@ -251,7 +285,7 @@ exports.createProject = async (req, res) => {
       url: getUrlPath(file.processedPath),
     }));
 
-    // Create project with properly structured data
+    // Create and save project
     const projectData = {
       name: req.body.name || "Untitled Project",
       mixStyle: req.body.mixStyle || "pop",
@@ -263,7 +297,7 @@ exports.createProject = async (req, res) => {
     const project = new Project(projectData);
     const savedProject = await project.save();
 
-    // When sending response, include URLs
+    // Prepare response
     const responseProject = savedProject.toObject();
     responseProject.files = responseProject.files.map((file) => ({
       ...file,
@@ -285,11 +319,18 @@ exports.createProject = async (req, res) => {
         code: error.code,
         stack: error.stack,
       },
+      request: {
+        headers: {
+          ...req.headers,
+          authorization: req.headers.authorization ? "[exists]" : "[missing]",
+        },
+      },
     });
 
     // Clean up any uploaded files
     await cleanupFiles(uploadedFiles);
 
+    // Send appropriate error response
     if (error instanceof multer.MulterError) {
       return res.status(400).json({
         message: "File upload error",
@@ -298,7 +339,10 @@ exports.createProject = async (req, res) => {
       });
     }
 
-    res.status(500).json({
+    const statusCode = error.message.includes("verification failed")
+      ? 400
+      : 500;
+    res.status(statusCode).json({
       message: "Error creating project",
       error: error.message,
     });

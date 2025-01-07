@@ -41,7 +41,12 @@ const app = express();
 
 // CORS configuration
 const corsOptions = {
-  origin: true, // Allow all origins in production
+  origin: [
+    "https://audio-alchemy-tau.vercel.app",
+    "https://audioalchemy-gszy.onrender.com",
+    "http://localhost:3000",
+    "http://localhost:5173",
+  ],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
   allowedHeaders: [
@@ -60,8 +65,9 @@ const corsOptions = {
     "Content-Range",
     "Accept-Ranges",
     "Content-Length",
+    "Access-Control-Allow-Origin",
   ],
-  maxAge: 86400, // 24 hours
+  maxAge: 86400,
   preflightContinue: false,
   optionsSuccessStatus: 204,
 };
@@ -69,42 +75,55 @@ const corsOptions = {
 // Apply CORS middleware first
 app.use(cors(corsOptions));
 
-// Handle preflight requests
-app.options("*", cors(corsOptions));
-
-// Handle HEAD requests
-app.head("*", (req, res) => {
-  console.log("Received HEAD request:", {
-    path: req.path,
-    headers: req.headers,
-  });
-  res.status(200).end();
+// Handle preflight requests explicitly
+app.options("*", (req, res) => {
+  const origin = req.headers.origin;
+  if (corsOptions.origin.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Methods", corsOptions.methods.join(","));
+    res.header(
+      "Access-Control-Allow-Headers",
+      corsOptions.allowedHeaders.join(",")
+    );
+    res.header("Access-Control-Max-Age", corsOptions.maxAge);
+    res.status(204).end();
+  } else {
+    res.status(403).json({ message: "CORS not allowed for this origin" });
+  }
 });
 
 // Add request logging middleware
 app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  // Set CORS headers for allowed origins
+  if (corsOptions.origin.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Methods", corsOptions.methods.join(","));
+    res.header(
+      "Access-Control-Allow-Headers",
+      corsOptions.allowedHeaders.join(",")
+    );
+    res.header(
+      "Access-Control-Expose-Headers",
+      corsOptions.exposedHeaders.join(",")
+    );
+    res.header("Access-Control-Max-Age", corsOptions.maxAge);
+
+    if (req.method === "OPTIONS") {
+      return res.status(204).end();
+    }
+  }
+
   console.log("Incoming request:", {
     method: req.method,
     path: req.path,
-    origin: req.headers.origin,
+    origin: origin,
     host: req.headers.host,
     contentType: req.headers["content-type"],
     contentLength: req.headers["content-length"],
     authorization: req.headers.authorization ? "present" : "missing",
-    body: req.method === "POST" ? req.body : undefined,
   });
-
-  // Ensure CORS headers are present on every response
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization, Range"
-  );
-  res.header(
-    "Access-Control-Allow-Methods",
-    "GET, POST, PUT, DELETE, OPTIONS, HEAD"
-  );
-  res.header("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges");
 
   next();
 });
@@ -139,28 +158,35 @@ const serveStatic = (directory, route) => {
   app.use(
     route,
     (req, res, next) => {
-      // Add CORS headers for audio files
-      res.set({
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization, Range",
-        "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges",
-      });
+      const origin = req.headers.origin;
 
-      // Handle OPTIONS request
-      if (req.method === "OPTIONS") {
-        return res.status(204).end();
+      // Set CORS headers for allowed origins
+      if (corsOptions.origin.includes(origin)) {
+        res.header("Access-Control-Allow-Origin", origin);
+        res.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+        res.header(
+          "Access-Control-Allow-Headers",
+          corsOptions.allowedHeaders.join(",")
+        );
+        res.header(
+          "Access-Control-Expose-Headers",
+          corsOptions.exposedHeaders.join(",")
+        );
       }
 
-      // Handle HEAD request
-      if (req.method === "HEAD") {
-        return res.status(200).end();
+      if (req.method === "OPTIONS") {
+        return res.status(204).end();
       }
 
       next();
     },
     express.static(directory, {
       setHeaders: (res, filePath) => {
+        const origin = req.headers.origin;
+        if (corsOptions.origin.includes(origin)) {
+          res.set("Access-Control-Allow-Origin", origin);
+        }
+
         if (filePath.endsWith(".wav") || filePath.endsWith(".mp3")) {
           res.set({
             "Accept-Ranges": "bytes",
