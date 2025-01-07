@@ -96,29 +96,32 @@ app.options("*", (req, res) => {
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
-  // Set CORS headers for allowed origins
-  if (corsOptions.origin.includes(origin)) {
-    res.header("Access-Control-Allow-Origin", origin);
-    res.header("Access-Control-Allow-Methods", corsOptions.methods.join(","));
-    res.header(
-      "Access-Control-Allow-Headers",
-      corsOptions.allowedHeaders.join(",")
-    );
-    res.header(
-      "Access-Control-Expose-Headers",
-      corsOptions.exposedHeaders.join(",")
-    );
-    res.header("Access-Control-Max-Age", corsOptions.maxAge);
+  // Set CORS headers for all requests, even without origin
+  const allowedOrigin =
+    origin && corsOptions.origin.includes(origin)
+      ? origin
+      : corsOptions.origin[0]; // Default to first allowed origin
 
-    if (req.method === "OPTIONS") {
-      return res.status(204).end();
-    }
+  res.header("Access-Control-Allow-Origin", allowedOrigin);
+  res.header("Access-Control-Allow-Methods", corsOptions.methods.join(","));
+  res.header(
+    "Access-Control-Allow-Headers",
+    corsOptions.allowedHeaders.join(",")
+  );
+  res.header(
+    "Access-Control-Expose-Headers",
+    corsOptions.exposedHeaders.join(",")
+  );
+  res.header("Access-Control-Max-Age", corsOptions.maxAge);
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
   }
 
   console.log("Incoming request:", {
     method: req.method,
     path: req.path,
-    origin: origin,
+    origin: origin || "direct request",
     host: req.headers.host,
     contentType: req.headers["content-type"],
     contentLength: req.headers["content-length"],
@@ -159,20 +162,21 @@ const serveStatic = (directory, route) => {
     route,
     (req, res, next) => {
       const origin = req.headers.origin;
+      const allowedOrigin =
+        origin && corsOptions.origin.includes(origin)
+          ? origin
+          : corsOptions.origin[0];
 
-      // Set CORS headers for allowed origins
-      if (corsOptions.origin.includes(origin)) {
-        res.header("Access-Control-Allow-Origin", origin);
-        res.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-        res.header(
-          "Access-Control-Allow-Headers",
-          corsOptions.allowedHeaders.join(",")
-        );
-        res.header(
-          "Access-Control-Expose-Headers",
-          corsOptions.exposedHeaders.join(",")
-        );
-      }
+      res.header("Access-Control-Allow-Origin", allowedOrigin);
+      res.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+      res.header(
+        "Access-Control-Allow-Headers",
+        corsOptions.allowedHeaders.join(",")
+      );
+      res.header(
+        "Access-Control-Expose-Headers",
+        corsOptions.exposedHeaders.join(",")
+      );
 
       if (req.method === "OPTIONS") {
         return res.status(204).end();
@@ -183,9 +187,12 @@ const serveStatic = (directory, route) => {
     express.static(directory, {
       setHeaders: (res, filePath) => {
         const origin = req.headers.origin;
-        if (corsOptions.origin.includes(origin)) {
-          res.set("Access-Control-Allow-Origin", origin);
-        }
+        const allowedOrigin =
+          origin && corsOptions.origin.includes(origin)
+            ? origin
+            : corsOptions.origin[0];
+
+        res.set("Access-Control-Allow-Origin", allowedOrigin);
 
         if (filePath.endsWith(".wav") || filePath.endsWith(".mp3")) {
           res.set({
@@ -205,49 +212,127 @@ const serveStatic = (directory, route) => {
 // Serve each upload directory separately with proper paths
 app.use(
   "/api/projects/processed",
+  (req, res, next) => {
+    const origin = req.headers.origin;
+    const allowedOrigin =
+      origin && corsOptions.origin.includes(origin)
+        ? origin
+        : corsOptions.origin[0];
+
+    res.header("Access-Control-Allow-Origin", allowedOrigin);
+    res.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.header(
+      "Access-Control-Allow-Headers",
+      corsOptions.allowedHeaders.join(",")
+    );
+    res.header(
+      "Access-Control-Expose-Headers",
+      corsOptions.exposedHeaders.join(",")
+    );
+
+    next();
+  },
   express.static(PROCESSED_DIR, {
     setHeaders: (res, filePath) => {
-      res.set({
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-        "Accept-Ranges": "bytes",
-        "Content-Type": filePath.endsWith(".wav") ? "audio/wav" : "audio/mpeg",
-        "Cache-Control": "no-cache",
-        "Content-Disposition": "inline",
-      });
+      if (filePath.endsWith(".wav") || filePath.endsWith(".mp3")) {
+        res.set({
+          "Accept-Ranges": "bytes",
+          "Content-Type": filePath.endsWith(".wav")
+            ? "audio/wav"
+            : "audio/mpeg",
+          "Cache-Control": "no-cache",
+          "Content-Disposition": "inline",
+        });
+      }
     },
   })
 );
+
 app.use(
   "/api/projects/mixed",
+  (req, res, next) => {
+    const origin = req.headers.origin;
+    const allowedOrigin =
+      origin && corsOptions.origin.includes(origin)
+        ? origin
+        : corsOptions.origin[0];
+
+    res.header("Access-Control-Allow-Origin", allowedOrigin);
+    res.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.header(
+      "Access-Control-Allow-Headers",
+      corsOptions.allowedHeaders.join(",")
+    );
+    res.header(
+      "Access-Control-Expose-Headers",
+      corsOptions.exposedHeaders.join(",")
+    );
+
+    next();
+  },
   express.static(MIXED_DIR, {
     setHeaders: (res, filePath) => {
-      res.set({
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-        "Accept-Ranges": "bytes",
-        "Content-Type": filePath.endsWith(".wav") ? "audio/wav" : "audio/mpeg",
-        "Cache-Control": "no-cache",
-        "Content-Disposition": "inline",
-      });
+      if (filePath.endsWith(".wav") || filePath.endsWith(".mp3")) {
+        res.set({
+          "Accept-Ranges": "bytes",
+          "Content-Type": filePath.endsWith(".wav")
+            ? "audio/wav"
+            : "audio/mpeg",
+          "Cache-Control": "no-cache",
+          "Content-Disposition": "inline",
+        });
+      }
     },
   })
 );
+
 app.use(
   "/api/projects/stems",
+  (req, res, next) => {
+    const origin = req.headers.origin;
+    const allowedOrigin =
+      origin && corsOptions.origin.includes(origin)
+        ? origin
+        : corsOptions.origin[0];
+
+    res.header("Access-Control-Allow-Origin", allowedOrigin);
+    res.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.header(
+      "Access-Control-Allow-Headers",
+      corsOptions.allowedHeaders.join(",")
+    );
+    res.header(
+      "Access-Control-Expose-Headers",
+      corsOptions.exposedHeaders.join(",")
+    );
+
+    next();
+  },
   express.static(STEMS_DIR, {
     setHeaders: (res, filePath) => {
-      res.set({
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-        "Accept-Ranges": "bytes",
-        "Content-Type": filePath.endsWith(".wav") ? "audio/wav" : "audio/mpeg",
-        "Cache-Control": "no-cache",
-        "Content-Disposition": "inline",
-      });
+      if (filePath.endsWith(".wav") || filePath.endsWith(".mp3")) {
+        res.set({
+          "Accept-Ranges": "bytes",
+          "Content-Type": filePath.endsWith(".wav")
+            ? "audio/wav"
+            : "audio/mpeg",
+          "Cache-Control": "no-cache",
+          "Content-Disposition": "inline",
+        });
+      }
     },
   })
 );
+
+// Add root path handler
+app.get("/", (req, res) => {
+  res.status(200).json({
+    message: "AudioAlchemy API is running",
+    status: "healthy",
+    environment: process.env.NODE_ENV,
+    timestamp: new Date().toISOString(),
+  });
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
