@@ -17,6 +17,16 @@ const STEMS_DIR = path.join(UPLOAD_DIR, "stems");
 const PROCESSED_DIR = path.join(UPLOAD_DIR, "processed");
 const MIXED_DIR = path.join(UPLOAD_DIR, "mixed");
 
+// Helper function to convert absolute path to relative path
+const toRelativePath = (absolutePath) => {
+  return path.relative(UPLOAD_DIR, absolutePath);
+};
+
+// Helper function to convert relative path to absolute path
+const toAbsolutePath = (relativePath) => {
+  return path.join(UPLOAD_DIR, relativePath);
+};
+
 // Ensure required directories exist with proper permissions
 const ensureDirectories = async () => {
   const dirs = [UPLOAD_DIR, STEMS_DIR, PROCESSED_DIR, MIXED_DIR];
@@ -270,10 +280,10 @@ exports.createProject = async (req, res) => {
       })),
     });
 
-    // Create project files array with proper structure
+    // Create project files array with proper structure and relative paths
     const files = processedFiles.map((file) => ({
-      originalPath: file.originalPath,
-      processedPath: file.processedPath,
+      originalPath: toRelativePath(file.originalPath),
+      processedPath: toRelativePath(file.processedPath),
       type: "wav",
       size: fsSync.statSync(file.originalPath).size,
       stemType: "other",
@@ -293,8 +303,8 @@ exports.createProject = async (req, res) => {
       files: projectData.files.map((f) => ({
         ...f,
         exists: {
-          original: fsSync.existsSync(f.originalPath),
-          processed: fsSync.existsSync(f.processedPath),
+          original: fsSync.existsSync(toAbsolutePath(f.originalPath)),
+          processed: fsSync.existsSync(toAbsolutePath(f.processedPath)),
         },
       })),
     });
@@ -317,8 +327,8 @@ exports.createProject = async (req, res) => {
         originalPath: f.originalPath,
         processedPath: f.processedPath,
         exists: {
-          original: fsSync.existsSync(f.originalPath),
-          processed: fsSync.existsSync(f.processedPath),
+          original: fsSync.existsSync(toAbsolutePath(f.originalPath)),
+          processed: fsSync.existsSync(toAbsolutePath(f.processedPath)),
         },
       })),
     });
@@ -626,7 +636,6 @@ async function analyzeProject(projectId) {
 
 exports.mixProject = async (req, res) => {
   try {
-    // Find the project
     const project = await Project.findOne({
       _id: req.params.id,
       user: req.userId,
@@ -647,25 +656,31 @@ exports.mixProject = async (req, res) => {
     // Ensure mixed directory exists
     await fs.mkdir(MIXED_DIR, { recursive: true, mode: 0o777 });
 
+    // Convert relative paths to absolute for processing
+    const filesWithAbsolutePaths = project.files.map((file) => ({
+      ...file.toObject(),
+      processedPath: toAbsolutePath(file.processedPath),
+    }));
+
     // Log what we're about to do
     console.log("Starting mix:", {
       projectId: project._id,
       mixFileName,
       mixPath,
       fileCount: project.files.length,
-      files: project.files.map((f) => ({
+      files: filesWithAbsolutePaths.map((f) => ({
         path: f.processedPath,
         exists: fsSync.existsSync(f.processedPath),
       })),
     });
 
     // Create the mix
-    await audioProcessor.mixAudioFiles(project.files, mixPath);
+    await audioProcessor.mixAudioFiles(filesWithAbsolutePaths, mixPath);
 
-    // Update the project with the mix file info
+    // Store relative path in database
     project.mixedFile = {
       fileName: mixFileName,
-      path: mixPath,
+      path: toRelativePath(mixPath),
       createdAt: new Date(),
     };
 
@@ -681,7 +696,10 @@ exports.mixProject = async (req, res) => {
     // Send response
     res.json({
       message: "Mix created successfully",
-      mixedFile: project.mixedFile,
+      mixedFile: {
+        ...project.mixedFile.toObject(),
+        path: toAbsolutePath(project.mixedFile.path),
+      },
     });
   } catch (error) {
     // Log the full error

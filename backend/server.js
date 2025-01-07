@@ -18,11 +18,15 @@ const STEMS_DIR = path.join(UPLOAD_DIR, "stems");
 const PROCESSED_DIR = path.join(UPLOAD_DIR, "processed");
 const MIXED_DIR = path.join(UPLOAD_DIR, "mixed");
 
-// Create required directories
+// Create required directories with proper permissions
 [UPLOAD_DIR, STEMS_DIR, PROCESSED_DIR, MIXED_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true, mode: 0o777 });
+    console.log(`Created directory: ${dir}`);
   }
+  // Ensure proper permissions
+  fs.chmodSync(dir, 0o777);
+  console.log(`Set permissions for directory: ${dir}`);
 });
 
 const app = express();
@@ -69,8 +73,13 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
-  exposedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept", "Range"],
+  exposedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "Content-Range",
+    "Accept-Ranges",
+  ],
   maxAge: 86400, // 24 hours
   preflightContinue: false,
   optionsSuccessStatus: 204,
@@ -103,12 +112,53 @@ app.use("/api/auth", require("./routes/auth"));
 app.use("/api/projects", require("./routes/projects"));
 app.use("/api/templates", require("./routes/templates"));
 
-// Serve static files
-app.use("/uploads", express.static(UPLOAD_DIR));
+// Serve static files with proper CORS and headers
+const serveStatic = (directory, route) => {
+  app.use(
+    route,
+    (req, res, next) => {
+      // Add CORS headers for audio files
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Range",
+        "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges",
+      });
+
+      // Handle OPTIONS request
+      if (req.method === "OPTIONS") {
+        return res.status(204).end();
+      }
+
+      next();
+    },
+    express.static(directory, {
+      setHeaders: (res, path) => {
+        if (path.endsWith(".wav") || path.endsWith(".mp3")) {
+          res.set({
+            "Accept-Ranges": "bytes",
+            "Content-Type": path.endsWith(".wav") ? "audio/wav" : "audio/mpeg",
+          });
+        }
+      },
+    })
+  );
+};
+
+// Serve each upload directory separately
+serveStatic(PROCESSED_DIR, "/uploads/processed");
+serveStatic(MIXED_DIR, "/uploads/mixed");
+serveStatic(STEMS_DIR, "/uploads/stems");
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error("Error:", err);
+  console.error("Error:", {
+    message: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    headers: req.headers,
+  });
   res.status(500).json({ message: err.message });
 });
 
