@@ -162,27 +162,32 @@ const upload = multer({
   },
 }).array("stems", 8);
 
+// Helper function to clean up files in case of error
+const cleanupFiles = async (files) => {
+  if (!files) return;
+
+  for (const file of files) {
+    try {
+      if (file.path && fsSync.existsSync(file.path)) {
+        await fs.unlink(file.path);
+        console.log(`Cleaned up file: ${file.path}`);
+      }
+    } catch (error) {
+      console.error(`Error cleaning up file ${file.path}:`, error);
+    }
+  }
+};
+
 exports.createProject = async (req, res) => {
+  let uploadedFiles = [];
   try {
     console.log("Project creation request received:", {
       body: req.body,
-      files: req.files ? req.files.length : 0,
       userId: req.userId,
       headers: {
         ...req.headers,
         authorization: req.headers.authorization ? "[exists]" : "[missing]",
         "content-type": req.headers["content-type"],
-      },
-      method: req.method,
-      path: req.path,
-      mongoState: mongoose.connection.readyState,
-      uploadDir: STEMS_DIR,
-      tempDir: {
-        path: "/tmp",
-        exists: fsSync.existsSync("/tmp"),
-        writable: fsSync.existsSync("/tmp")
-          ? Boolean(fsSync.statSync("/tmp").mode & fsSync.constants.W_OK)
-          : false,
       },
     });
 
@@ -198,80 +203,43 @@ exports.createProject = async (req, res) => {
             code: err.code,
             name: err.name,
             stack: err.stack,
-            mongoState: mongoose.connection.readyState,
             multerError: err instanceof multer.MulterError,
-            headers: req.headers,
-            tempDir: {
-              path: "/tmp",
-              exists: fsSync.existsSync("/tmp"),
-              writable: fsSync.existsSync("/tmp")
-                ? Boolean(fsSync.statSync("/tmp").mode & fsSync.constants.W_OK)
-                : false,
-            },
           });
           reject(err);
         } else {
+          uploadedFiles = req.files || [];
           console.log("Upload successful:", {
-            filesReceived: req.files ? req.files.length : 0,
-            files: req.files
-              ? req.files.map((f) => ({
-                  originalname: f.originalname,
-                  path: f.path,
-                  size: f.size,
-                  exists: fsSync.existsSync(f.path),
-                  stats: fsSync.existsSync(f.path)
-                    ? fsSync.statSync(f.path)
-                    : null,
-                  permissions: fsSync.existsSync(f.path)
-                    ? (
-                        fsSync.statSync(f.path).mode & parseInt("777", 8)
-                      ).toString(8)
-                    : null,
-                }))
-              : [],
-            body: req.body,
-            uploadDir: STEMS_DIR,
+            filesReceived: uploadedFiles.length,
+            files: uploadedFiles.map((f) => ({
+              originalname: f.originalname,
+              path: f.path,
+              size: f.size,
+            })),
           });
           resolve();
         }
       });
     });
 
-    if (!req.files || req.files.length === 0) {
-      console.error("No files received in request");
-      return res.status(400).json({ message: "No files uploaded" });
+    if (!uploadedFiles.length) {
+      throw new Error("No files uploaded");
     }
 
     // Process files
     const processedDir = PROCESSED_DIR;
-    console.log("Processing files in directory:", processedDir);
-
-    // Ensure processed directory exists
     await fs.mkdir(processedDir, { recursive: true, mode: 0o777 });
 
     const processedFiles = await audioProcessor.processAudioFiles(
-      req.files,
+      uploadedFiles,
       processedDir
     );
-    console.log("Files processed:", {
-      count: processedFiles.length,
-      files: processedFiles.map((f) => ({
-        originalPath: f.originalPath,
-        processedPath: f.processedPath,
-        exists: {
-          original: fsSync.existsSync(f.originalPath),
-          processed: fsSync.existsSync(f.processedPath),
-        },
-        stats: {
-          original: fsSync.existsSync(f.originalPath)
-            ? fsSync.statSync(f.originalPath)
-            : null,
-          processed: fsSync.existsSync(f.processedPath)
-            ? fsSync.statSync(f.processedPath)
-            : null,
-        },
-      })),
-    });
+
+    // Verify processed files exist
+    for (const file of processedFiles) {
+      if (!fsSync.existsSync(file.processedPath)) {
+        throw new Error(`Processed file not found: ${file.processedPath}`);
+      }
+    }
 
     // Create project files array with proper structure and relative paths
     const files = processedFiles.map((file) => ({
@@ -280,7 +248,7 @@ exports.createProject = async (req, res) => {
       type: path.extname(file.originalPath).slice(1).toLowerCase() || "wav",
       size: fsSync.statSync(file.originalPath).size,
       stemType: "other",
-      url: getUrlPath(file.processedPath), // Add URL for frontend
+      url: getUrlPath(file.processedPath),
     }));
 
     // Create project with properly structured data
@@ -292,40 +260,8 @@ exports.createProject = async (req, res) => {
       status: "ready",
     };
 
-    console.log("Creating project with data:", {
-      ...projectData,
-      files: projectData.files.map((f) => ({
-        ...f,
-        exists: {
-          original: fsSync.existsSync(toAbsolutePath(f.originalPath)),
-          processed: fsSync.existsSync(toAbsolutePath(f.processedPath)),
-        },
-      })),
-    });
-
     const project = new Project(projectData);
-    console.log("Project model created:", {
-      id: project._id,
-      name: project.name,
-      filesCount: project.files.length,
-      mongoState: mongoose.connection.readyState,
-    });
-
     const savedProject = await project.save();
-    console.log("Project saved successfully:", {
-      id: savedProject._id,
-      name: savedProject.name,
-      filesCount: savedProject.files.length,
-      mongoState: mongoose.connection.readyState,
-      files: savedProject.files.map((f) => ({
-        originalPath: f.originalPath,
-        processedPath: f.processedPath,
-        exists: {
-          original: fsSync.existsSync(toAbsolutePath(f.originalPath)),
-          processed: fsSync.existsSync(toAbsolutePath(f.processedPath)),
-        },
-      })),
-    });
 
     // When sending response, include URLs
     const responseProject = savedProject.toObject();
@@ -333,11 +269,12 @@ exports.createProject = async (req, res) => {
       ...file,
       url: getUrlPath(toAbsolutePath(file.processedPath)),
     }));
-    if (responseProject.mixedFile) {
-      responseProject.mixedFile.url = getUrlPath(
-        toAbsolutePath(responseProject.mixedFile.path)
-      );
-    }
+
+    console.log("Project created successfully:", {
+      id: savedProject._id,
+      name: savedProject.name,
+      filesCount: savedProject.files.length,
+    });
 
     res.status(201).json(responseProject);
   } catch (error) {
@@ -347,46 +284,11 @@ exports.createProject = async (req, res) => {
         name: error.name,
         code: error.code,
         stack: error.stack,
-        multerError: error instanceof multer.MulterError,
-      },
-      request: {
-        method: req.method,
-        path: req.path,
-        headers: {
-          ...req.headers,
-          authorization: req.headers.authorization ? "[exists]" : "[missing]",
-        },
-        body: req.body,
-        files: req.files
-          ? req.files.map((f) => ({
-              originalname: f.originalname,
-              path: f.path,
-              exists: fsSync.existsSync(f.path),
-              stats: fsSync.existsSync(f.path) ? fsSync.statSync(f.path) : null,
-            }))
-          : [],
-      },
-      system: {
-        mongoState: mongoose.connection.readyState,
-        tempDir: {
-          path: "/tmp",
-          exists: fsSync.existsSync("/tmp"),
-          writable: fsSync.existsSync("/tmp")
-            ? Boolean(fsSync.statSync("/tmp").mode & fsSync.constants.W_OK)
-            : false,
-          freeSpace: fsSync.existsSync("/tmp")
-            ? fs.statfsSync("/tmp").bfree * fs.statfsSync("/tmp").bsize
-            : 0,
-        },
-        uploadDir: {
-          path: STEMS_DIR,
-          exists: fsSync.existsSync(STEMS_DIR),
-          writable: fsSync.existsSync(STEMS_DIR)
-            ? Boolean(fsSync.statSync(STEMS_DIR).mode & fsSync.constants.W_OK)
-            : false,
-        },
       },
     });
+
+    // Clean up any uploaded files
+    await cleanupFiles(uploadedFiles);
 
     if (error instanceof multer.MulterError) {
       return res.status(400).json({
@@ -399,7 +301,6 @@ exports.createProject = async (req, res) => {
     res.status(500).json({
       message: "Error creating project",
       error: error.message,
-      mongoState: mongoose.connection.readyState,
     });
   }
 };

@@ -39,43 +39,11 @@ const MIXED_DIR = path.join(UPLOAD_DIR, "mixed");
 
 const app = express();
 
-// Basic CORS configuration
+// CORS configuration
 const corsOptions = {
-  origin: function (origin, callback) {
-    console.log("Incoming request origin:", origin);
-
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      console.log("Allowing request with no origin");
-      return callback(null, true);
-    }
-
-    // In production, allow all origins
-    if (process.env.NODE_ENV === "production") {
-      console.log("Production mode: Allowing all origins");
-      return callback(null, true);
-    }
-
-    // In development, only allow specific origins
-    const allowedOrigins = [
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-      "http://localhost:5174",
-      "http://127.0.0.1:5174",
-      "http://localhost:8000",
-      "http://127.0.0.1:8000",
-    ];
-
-    if (allowedOrigins.includes(origin)) {
-      console.log("Development mode: Allowing whitelisted origin:", origin);
-      return callback(null, true);
-    }
-
-    console.log("Development mode: Blocking origin:", origin);
-    return callback(new Error("Not allowed by CORS"));
-  },
+  origin: true, // Allow all origins in production
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
   allowedHeaders: [
     "Content-Type",
     "Authorization",
@@ -98,13 +66,22 @@ const corsOptions = {
   optionsSuccessStatus: 204,
 };
 
-// Apply CORS middleware
+// Apply CORS middleware first
 app.use(cors(corsOptions));
 
-// Enable pre-flight requests for all routes
+// Handle preflight requests
 app.options("*", cors(corsOptions));
 
-// Add request logging middleware with more details
+// Handle HEAD requests
+app.head("*", (req, res) => {
+  console.log("Received HEAD request:", {
+    path: req.path,
+    headers: req.headers,
+  });
+  res.status(200).end();
+});
+
+// Add request logging middleware
 app.use((req, res, next) => {
   console.log("Incoming request:", {
     method: req.method,
@@ -117,13 +94,16 @@ app.use((req, res, next) => {
     body: req.method === "POST" ? req.body : undefined,
   });
 
-  // Add CORS headers to every response
+  // Ensure CORS headers are present on every response
   res.header("Access-Control-Allow-Origin", "*");
   res.header(
     "Access-Control-Allow-Headers",
     "Origin, X-Requested-With, Content-Type, Accept, Authorization, Range"
   );
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, DELETE, OPTIONS, HEAD"
+  );
   res.header("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges");
 
   next();
@@ -162,7 +142,7 @@ const serveStatic = (directory, route) => {
       // Add CORS headers for audio files
       res.set({
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, Range",
         "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges",
       });
@@ -170,6 +150,11 @@ const serveStatic = (directory, route) => {
       // Handle OPTIONS request
       if (req.method === "OPTIONS") {
         return res.status(204).end();
+      }
+
+      // Handle HEAD request
+      if (req.method === "HEAD") {
+        return res.status(200).end();
       }
 
       next();
@@ -192,9 +177,51 @@ const serveStatic = (directory, route) => {
 };
 
 // Serve each upload directory separately with proper paths
-app.use("/api/projects/processed", express.static(PROCESSED_DIR));
-app.use("/api/projects/mixed", express.static(MIXED_DIR));
-app.use("/api/projects/stems", express.static(STEMS_DIR));
+app.use(
+  "/api/projects/processed",
+  express.static(PROCESSED_DIR, {
+    setHeaders: (res, filePath) => {
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+        "Accept-Ranges": "bytes",
+        "Content-Type": filePath.endsWith(".wav") ? "audio/wav" : "audio/mpeg",
+        "Cache-Control": "no-cache",
+        "Content-Disposition": "inline",
+      });
+    },
+  })
+);
+app.use(
+  "/api/projects/mixed",
+  express.static(MIXED_DIR, {
+    setHeaders: (res, filePath) => {
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+        "Accept-Ranges": "bytes",
+        "Content-Type": filePath.endsWith(".wav") ? "audio/wav" : "audio/mpeg",
+        "Cache-Control": "no-cache",
+        "Content-Disposition": "inline",
+      });
+    },
+  })
+);
+app.use(
+  "/api/projects/stems",
+  express.static(STEMS_DIR, {
+    setHeaders: (res, filePath) => {
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+        "Accept-Ranges": "bytes",
+        "Content-Type": filePath.endsWith(".wav") ? "audio/wav" : "audio/mpeg",
+        "Cache-Control": "no-cache",
+        "Content-Disposition": "inline",
+      });
+    },
+  })
+);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -205,12 +232,24 @@ app.use((err, req, res, next) => {
     method: req.method,
     headers: req.headers,
   });
+
+  // Ensure error response has CORS headers
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization, Range"
+  );
+
   res.status(500).json({ message: err.message });
 });
 
 // Database connection
 const mongooseOptions = {
   dbName: "itMix",
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
 };
 
 // Initialize server
