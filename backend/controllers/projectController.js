@@ -19,12 +19,25 @@ const MIXED_DIR = path.join(UPLOAD_DIR, "mixed");
 
 // Helper function to convert absolute path to relative path
 const toRelativePath = (absolutePath) => {
-  return path.relative(UPLOAD_DIR, absolutePath);
+  const relativePath = path.relative(UPLOAD_DIR, absolutePath);
+  // Replace backslashes with forward slashes for URL compatibility
+  return relativePath.replace(/\\/g, "/");
 };
 
 // Helper function to convert relative path to absolute path
 const toAbsolutePath = (relativePath) => {
-  return path.join(UPLOAD_DIR, relativePath);
+  // Ensure forward slashes for path joining
+  const normalizedPath = relativePath.replace(/\\/g, "/");
+  return path.join(UPLOAD_DIR, normalizedPath);
+};
+
+// Helper function to get the URL path for a file
+const getUrlPath = (filePath) => {
+  const relativePath = toRelativePath(filePath);
+  const pathParts = relativePath.split(path.sep);
+  const fileType = pathParts[0]; // 'processed', 'mixed', or 'stems'
+  const fileName = pathParts[pathParts.length - 1];
+  return `/api/projects/${fileType}/${fileName}`;
 };
 
 // Ensure required directories exist with proper permissions
@@ -267,6 +280,7 @@ exports.createProject = async (req, res) => {
       type: path.extname(file.originalPath).slice(1).toLowerCase() || "wav",
       size: fsSync.statSync(file.originalPath).size,
       stemType: "other",
+      url: getUrlPath(file.processedPath), // Add URL for frontend
     }));
 
     // Create project with properly structured data
@@ -313,7 +327,19 @@ exports.createProject = async (req, res) => {
       })),
     });
 
-    res.status(201).json(savedProject);
+    // When sending response, include URLs
+    const responseProject = savedProject.toObject();
+    responseProject.files = responseProject.files.map((file) => ({
+      ...file,
+      url: getUrlPath(toAbsolutePath(file.processedPath)),
+    }));
+    if (responseProject.mixedFile) {
+      responseProject.mixedFile.url = getUrlPath(
+        toAbsolutePath(responseProject.mixedFile.path)
+      );
+    }
+
+    res.status(201).json(responseProject);
   } catch (error) {
     console.error("Project creation error:", {
       error: {
@@ -444,8 +470,20 @@ exports.getProject = async (req, res) => {
       return res.status(404).json({ message: "Project not found" });
     }
 
-    console.log("Sending project data:", project);
-    res.json(project);
+    // Convert to object and add URLs
+    const responseProject = project.toObject();
+    responseProject.files = responseProject.files.map((file) => ({
+      ...file,
+      url: getUrlPath(toAbsolutePath(file.processedPath)),
+    }));
+    if (responseProject.mixedFile) {
+      responseProject.mixedFile.url = getUrlPath(
+        toAbsolutePath(responseProject.mixedFile.path)
+      );
+    }
+
+    console.log("Sending project data:", responseProject);
+    res.json(responseProject);
   } catch (error) {
     console.error("Error fetching project:", error);
     res
@@ -673,12 +711,13 @@ exports.mixProject = async (req, res) => {
       exists: fsSync.existsSync(mixPath),
     });
 
-    // Send response
+    // Send response with URL
     res.json({
       message: "Mix created successfully",
       mixedFile: {
         ...project.mixedFile.toObject(),
         path: toAbsolutePath(project.mixedFile.path),
+        url: getUrlPath(toAbsolutePath(project.mixedFile.path)),
       },
     });
   } catch (error) {

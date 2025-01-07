@@ -50,36 +50,28 @@ const corsOptions = {
       return callback(null, true);
     }
 
+    // In production, allow all origins
+    if (process.env.NODE_ENV === "production") {
+      console.log("Production mode: Allowing all origins");
+      return callback(null, true);
+    }
+
+    // In development, only allow specific origins
     const allowedOrigins = [
-      // Development origins
       "http://localhost:5173",
       "http://127.0.0.1:5173",
       "http://localhost:5174",
       "http://127.0.0.1:5174",
       "http://localhost:8000",
       "http://127.0.0.1:8000",
-      // Production origins
-      "https://audio-alchemy-tau.vercel.app",
-      "https://audioalchemy-gszy.onrender.com",
-      "https://audio-alchemy.vercel.app",
     ];
 
-    // In production, be more permissive with Vercel and Render domains
-    if (process.env.NODE_ENV === "production") {
-      if (
-        origin.endsWith(".vercel.app") ||
-        origin.endsWith(".onrender.com") ||
-        allowedOrigins.includes(origin)
-      ) {
-        console.log("Allowing production domain:", origin);
-        return callback(null, true);
-      }
-    } else if (allowedOrigins.includes(origin)) {
-      console.log("Allowing whitelisted origin:", origin);
+    if (allowedOrigins.includes(origin)) {
+      console.log("Development mode: Allowing whitelisted origin:", origin);
       return callback(null, true);
     }
 
-    console.log("Blocking origin:", origin);
+    console.log("Development mode: Blocking origin:", origin);
     return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
@@ -92,6 +84,7 @@ const corsOptions = {
     "Origin",
     "Access-Control-Request-Method",
     "Access-Control-Request-Headers",
+    "X-Requested-With",
   ],
   exposedHeaders: [
     "Content-Type",
@@ -123,6 +116,16 @@ app.use((req, res, next) => {
     authorization: req.headers.authorization ? "present" : "missing",
     body: req.method === "POST" ? req.body : undefined,
   });
+
+  // Add CORS headers to every response
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization, Range"
+  );
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges");
+
   next();
 });
 
@@ -142,9 +145,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Body parsing middleware
-app.use(express.json({ limit: "100mb" }));
-app.use(express.urlencoded({ extended: true, limit: "100mb" }));
+// Body parsing middleware with increased limits
+app.use(express.json({ limit: "500mb" }));
+app.use(express.urlencoded({ extended: true, limit: "500mb" }));
 
 // Routes
 app.use("/api/auth", require("./routes/auth"));
@@ -172,11 +175,15 @@ const serveStatic = (directory, route) => {
       next();
     },
     express.static(directory, {
-      setHeaders: (res, path) => {
-        if (path.endsWith(".wav") || path.endsWith(".mp3")) {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".wav") || filePath.endsWith(".mp3")) {
           res.set({
             "Accept-Ranges": "bytes",
-            "Content-Type": path.endsWith(".wav") ? "audio/wav" : "audio/mpeg",
+            "Content-Type": filePath.endsWith(".wav")
+              ? "audio/wav"
+              : "audio/mpeg",
+            "Cache-Control": "no-cache",
+            "Content-Disposition": "inline",
           });
         }
       },
@@ -184,10 +191,10 @@ const serveStatic = (directory, route) => {
   );
 };
 
-// Serve each upload directory separately
-serveStatic(PROCESSED_DIR, "/uploads/processed");
-serveStatic(MIXED_DIR, "/uploads/mixed");
-serveStatic(STEMS_DIR, "/uploads/stems");
+// Serve each upload directory separately with proper paths
+app.use("/api/projects/processed", express.static(PROCESSED_DIR));
+app.use("/api/projects/mixed", express.static(MIXED_DIR));
+app.use("/api/projects/stems", express.static(STEMS_DIR));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
