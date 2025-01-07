@@ -40,11 +40,14 @@ const corsOptions = {
       "http://127.0.0.1:5174",
       "http://localhost:8000",
       "http://127.0.0.1:8000",
+      "https://audio-alchemy-tau.vercel.app",
+      "https://audioalchemy-gszy.onrender.com",
     ];
 
     if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
       callback(null, true);
     } else {
+      console.log("CORS blocked origin:", origin);
       callback(new Error("Not allowed by CORS"));
     }
   },
@@ -52,6 +55,7 @@ const corsOptions = {
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   exposedHeaders: ["Content-Type", "Authorization"],
+  maxAge: 86400, // 24 hours
 };
 
 app.use(cors(corsOptions));
