@@ -20,13 +20,21 @@ const MIXED_DIR = path.join(UPLOAD_DIR, "mixed");
 
 // Create required directories with proper permissions
 [UPLOAD_DIR, STEMS_DIR, PROCESSED_DIR, MIXED_DIR].forEach((dir) => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true, mode: 0o777 });
-    console.log(`Created directory: ${dir}`);
+  try {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true, mode: 0o777 });
+      console.log(`Created directory: ${dir}`);
+    }
+    // Ensure proper permissions
+    fs.chmodSync(dir, 0o777);
+    console.log(`Set permissions for directory: ${dir}`);
+  } catch (error) {
+    console.error(
+      `Error creating/setting permissions for directory ${dir}:`,
+      error
+    );
+    // Don't exit process, just log the error
   }
-  // Ensure proper permissions
-  fs.chmodSync(dir, 0o777);
-  console.log(`Set permissions for directory: ${dir}`);
 });
 
 const app = express();
@@ -43,63 +51,94 @@ const corsOptions = {
     }
 
     const allowedOrigins = [
+      // Development origins
       "http://localhost:5173",
       "http://127.0.0.1:5173",
       "http://localhost:5174",
       "http://127.0.0.1:5174",
       "http://localhost:8000",
       "http://127.0.0.1:8000",
+      // Production origins
       "https://audio-alchemy-tau.vercel.app",
       "https://audioalchemy-gszy.onrender.com",
+      "https://audio-alchemy.vercel.app",
     ];
 
-    // In production, be more permissive
+    // In production, be more permissive with Vercel and Render domains
     if (process.env.NODE_ENV === "production") {
-      const vercelDomain = ".vercel.app";
-      const renderDomain = ".onrender.com";
-      if (origin.endsWith(vercelDomain) || origin.endsWith(renderDomain)) {
+      if (
+        origin.endsWith(".vercel.app") ||
+        origin.endsWith(".onrender.com") ||
+        allowedOrigins.includes(origin)
+      ) {
         console.log("Allowing production domain:", origin);
         return callback(null, true);
       }
+    } else if (allowedOrigins.includes(origin)) {
+      console.log("Allowing whitelisted origin:", origin);
+      return callback(null, true);
     }
 
-    if (allowedOrigins.includes(origin)) {
-      console.log("Allowing whitelisted origin:", origin);
-      callback(null, true);
-    } else {
-      console.log("Blocking origin:", origin);
-      callback(new Error("Not allowed by CORS"));
-    }
+    console.log("Blocking origin:", origin);
+    return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "Accept", "Range"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "Accept",
+    "Range",
+    "Origin",
+    "Access-Control-Request-Method",
+    "Access-Control-Request-Headers",
+  ],
   exposedHeaders: [
     "Content-Type",
     "Authorization",
     "Content-Range",
     "Accept-Ranges",
+    "Content-Length",
   ],
   maxAge: 86400, // 24 hours
   preflightContinue: false,
   optionsSuccessStatus: 204,
 };
 
+// Apply CORS middleware
 app.use(cors(corsOptions));
 
 // Enable pre-flight requests for all routes
 app.options("*", cors(corsOptions));
 
-// Add request logging middleware
+// Add request logging middleware with more details
 app.use((req, res, next) => {
   console.log("Incoming request:", {
     method: req.method,
     path: req.path,
     origin: req.headers.origin,
+    host: req.headers.host,
     contentType: req.headers["content-type"],
     contentLength: req.headers["content-length"],
     authorization: req.headers.authorization ? "present" : "missing",
+    body: req.method === "POST" ? req.body : undefined,
   });
+  next();
+});
+
+// Add response logging middleware
+app.use((req, res, next) => {
+  const originalSend = res.send;
+  res.send = function (data) {
+    console.log("Response:", {
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      headers: res.getHeaders(),
+      origin: req.headers.origin,
+    });
+    return originalSend.call(this, data);
+  };
   next();
 });
 

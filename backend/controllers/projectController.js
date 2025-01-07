@@ -53,10 +53,13 @@ const ensureDirectories = async () => {
         error: error.message,
         stack: error.stack,
       });
-      throw error;
+      // Don't throw error, just log it
     }
   }
 };
+
+// Call ensureDirectories at startup
+ensureDirectories().catch(console.error);
 
 // Configure multer for stem uploads
 const storage = multer.diskStorage({
@@ -109,7 +112,7 @@ const storage = multer.diskStorage({
     });
 
     const timestamp = Date.now();
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9]/g, "_");
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9.]/g, "_");
     const filename = `${timestamp}-${safeName}`;
     console.log("Generated filename:", filename);
     cb(null, filename);
@@ -170,31 +173,8 @@ exports.createProject = async (req, res) => {
       },
     });
 
-    // Verify upload directory exists and is writable
-    try {
-      await fs.mkdir(STEMS_DIR, { recursive: true, mode: 0o777 });
-      await fs.access(STEMS_DIR, fs.constants.W_OK);
-      const stats = await fs.stat(STEMS_DIR);
-      console.log("Upload directory verified:", {
-        path: STEMS_DIR,
-        mode: stats.mode.toString(8),
-        uid: stats.uid,
-        gid: stats.gid,
-        isDirectory: stats.isDirectory(),
-        isWritable: Boolean(stats.mode & fs.constants.W_OK),
-      });
-    } catch (dirError) {
-      console.error("Upload directory error:", {
-        error: dirError.message,
-        code: dirError.code,
-        stack: dirError.stack,
-        path: STEMS_DIR,
-      });
-      return res.status(500).json({
-        message: "Server configuration error - upload directory not accessible",
-        error: dirError.message,
-      });
-    }
+    // Ensure directories exist
+    await ensureDirectories();
 
     // Handle file upload with detailed logging
     await new Promise((resolve, reject) => {
@@ -284,7 +264,7 @@ exports.createProject = async (req, res) => {
     const files = processedFiles.map((file) => ({
       originalPath: toRelativePath(file.originalPath),
       processedPath: toRelativePath(file.processedPath),
-      type: "wav",
+      type: path.extname(file.originalPath).slice(1).toLowerCase() || "wav",
       size: fsSync.statSync(file.originalPath).size,
       stemType: "other",
     }));
@@ -295,7 +275,7 @@ exports.createProject = async (req, res) => {
       mixStyle: req.body.mixStyle || "pop",
       user: req.userId,
       files: files,
-      status: "uploading",
+      status: "ready",
     };
 
     console.log("Creating project with data:", {
@@ -355,8 +335,8 @@ exports.createProject = async (req, res) => {
           ? req.files.map((f) => ({
               originalname: f.originalname,
               path: f.path,
-              exists: fs.existsSync(f.path),
-              stats: fs.existsSync(f.path) ? fs.statSync(f.path) : null,
+              exists: fsSync.existsSync(f.path),
+              stats: fsSync.existsSync(f.path) ? fsSync.statSync(f.path) : null,
             }))
           : [],
       },
@@ -364,19 +344,19 @@ exports.createProject = async (req, res) => {
         mongoState: mongoose.connection.readyState,
         tempDir: {
           path: "/tmp",
-          exists: fs.existsSync("/tmp"),
-          writable: fs.existsSync("/tmp")
-            ? Boolean(fs.statSync("/tmp").mode & fs.constants.W_OK)
+          exists: fsSync.existsSync("/tmp"),
+          writable: fsSync.existsSync("/tmp")
+            ? Boolean(fsSync.statSync("/tmp").mode & fsSync.constants.W_OK)
             : false,
-          freeSpace: fs.existsSync("/tmp")
+          freeSpace: fsSync.existsSync("/tmp")
             ? fs.statfsSync("/tmp").bfree * fs.statfsSync("/tmp").bsize
             : 0,
         },
         uploadDir: {
           path: STEMS_DIR,
-          exists: fs.existsSync(STEMS_DIR),
-          writable: fs.existsSync(STEMS_DIR)
-            ? Boolean(fs.statSync(STEMS_DIR).mode & fs.constants.W_OK)
+          exists: fsSync.existsSync(STEMS_DIR),
+          writable: fsSync.existsSync(STEMS_DIR)
+            ? Boolean(fsSync.statSync(STEMS_DIR).mode & fsSync.constants.W_OK)
             : false,
         },
       },
