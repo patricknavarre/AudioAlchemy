@@ -30,8 +30,13 @@ const app = express();
 // Basic CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
+    console.log("Incoming request origin:", origin);
+
     // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log("Allowing request with no origin");
+      return callback(null, true);
+    }
 
     const allowedOrigins = [
       "http://localhost:5173",
@@ -44,24 +49,50 @@ const corsOptions = {
       "https://audioalchemy-gszy.onrender.com",
     ];
 
-    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+    // In production, be more permissive
+    if (process.env.NODE_ENV === "production") {
+      const vercelDomain = ".vercel.app";
+      const renderDomain = ".onrender.com";
+      if (origin.endsWith(vercelDomain) || origin.endsWith(renderDomain)) {
+        console.log("Allowing production domain:", origin);
+        return callback(null, true);
+      }
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      console.log("Allowing whitelisted origin:", origin);
       callback(null, true);
     } else {
-      console.log("CORS blocked origin:", origin);
+      console.log("Blocking origin:", origin);
       callback(new Error("Not allowed by CORS"));
     }
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
   exposedHeaders: ["Content-Type", "Authorization"],
   maxAge: 86400, // 24 hours
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
 };
 
 app.use(cors(corsOptions));
 
 // Enable pre-flight requests for all routes
 app.options("*", cors(corsOptions));
+
+// Add request logging middleware
+app.use((req, res, next) => {
+  console.log("Incoming request:", {
+    method: req.method,
+    path: req.path,
+    origin: req.headers.origin,
+    contentType: req.headers["content-type"],
+    contentLength: req.headers["content-length"],
+    authorization: req.headers.authorization ? "present" : "missing",
+  });
+  next();
+});
 
 // Body parsing middleware
 app.use(express.json({ limit: "100mb" }));
