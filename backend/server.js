@@ -81,27 +81,20 @@ const allowedOrigins = [
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
-  // Allow requests with no origin (like mobile apps or curl requests)
-  if (!origin) {
-    res.header("Access-Control-Allow-Origin", "*");
-  } else if (allowedOrigins.includes(origin)) {
+  // Set CORS headers
+  if (allowedOrigins.includes(origin)) {
     res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Credentials", "true");
+  } else {
+    // For requests without origin (like Postman or curl)
+    res.header("Access-Control-Allow-Origin", "*");
   }
 
-  res.header(
-    "Access-Control-Allow-Methods",
-    "GET, POST, PUT, DELETE, OPTIONS, HEAD"
-  );
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, Accept, Range, Origin, X-Requested-With"
-  );
-  res.header(
-    "Access-Control-Expose-Headers",
-    "Content-Range, Accept-Ranges, Content-Length"
-  );
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header("Access-Control-Max-Age", "86400");
+  // Allow all necessary headers
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "*");
+  res.header("Access-Control-Expose-Headers", "*");
+  res.header("Access-Control-Max-Age", "86400"); // 24 hours
 
   // Handle preflight
   if (req.method === "OPTIONS") {
@@ -111,21 +104,36 @@ app.use((req, res, next) => {
   next();
 });
 
-// Add request logging
+// Add request logging with more details
 app.use((req, res, next) => {
-  console.log("Incoming request:", {
+  console.log("Request details:", {
     method: req.method,
     path: req.path,
-    origin: req.headers.origin || "direct request",
+    origin: req.headers.origin || "no origin",
     host: req.headers.host,
     contentType: req.headers["content-type"],
     contentLength: req.headers["content-length"],
     authorization: req.headers.authorization ? "present" : "missing",
+    body: req.method === "POST" ? req.body : undefined,
+    query: req.query,
+    params: req.params,
   });
+
+  // Log response
+  const originalSend = res.send;
+  res.send = function (data) {
+    console.log("Response:", {
+      statusCode: res.statusCode,
+      headers: res.getHeaders(),
+      body: data,
+    });
+    return originalSend.apply(res, arguments);
+  };
+
   next();
 });
 
-// Body parsing middleware with increased limits
+// Increase payload limits
 app.use(express.json({ limit: "500mb" }));
 app.use(express.urlencoded({ extended: true, limit: "500mb" }));
 
@@ -222,23 +230,26 @@ app.get("/", (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error("Error:", {
+  console.error("Server error:", {
     message: err.message,
     stack: err.stack,
     path: req.path,
     method: req.method,
+    headers: req.headers,
   });
 
+  // Ensure CORS headers are set even for errors
   const origin = req.headers.origin;
-  if (!origin) {
-    res.header("Access-Control-Allow-Origin", "*");
-  } else if (allowedOrigins.includes(origin)) {
+  if (allowedOrigins.includes(origin)) {
     res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Credentials", "true");
+  } else {
+    res.header("Access-Control-Allow-Origin", "*");
   }
 
-  res.status(500).json({
-    message: "Internal server error",
-    error: err.message,
+  res.status(err.status || 500).json({
+    message: err.message || "Internal server error",
+    error: process.env.NODE_ENV === "development" ? err : {},
   });
 });
 
