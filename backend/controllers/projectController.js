@@ -77,57 +77,53 @@ ensureDirectories().catch(console.error);
 // Configure multer for stem uploads
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
-    console.log("Multer destination handler:", {
-      file: {
-        fieldname: file.fieldname,
-        originalname: file.originalname,
-        encoding: file.encoding,
-        mimetype: file.mimetype,
-      },
-      headers: req.headers,
-      uploadDir: STEMS_DIR,
-    });
-
     try {
-      await fs.mkdir(STEMS_DIR, { recursive: true, mode: 0o777 });
-      console.log("Upload directory created/verified:", STEMS_DIR);
+      // Get the directory from global if it was updated
+      const uploadDir = global.STEMS_DIR || STEMS_DIR;
 
-      // Verify directory permissions
-      await fs.access(STEMS_DIR, fs.constants.W_OK);
-      console.log("Upload directory is writable");
+      // Ensure the directory exists and is writable
+      await fs.mkdir(uploadDir, { recursive: true, mode: 0o777 });
+      await fs.chmod(uploadDir, 0o777);
 
-      const stats = await fs.stat(STEMS_DIR);
-      console.log("Directory permissions:", {
-        path: STEMS_DIR,
-        mode: stats.mode.toString(8),
-        uid: stats.uid,
-        gid: stats.gid,
+      // Test write access
+      const testFile = path.join(uploadDir, ".write-test");
+      await fs.writeFile(testFile, "test");
+      await fs.unlink(testFile);
+
+      console.log("Upload directory verified:", {
+        dir: uploadDir,
+        file: file.originalname,
       });
 
-      cb(null, STEMS_DIR);
+      cb(null, uploadDir);
     } catch (error) {
-      console.error("Error with upload directory:", {
+      console.error("Upload directory error:", {
         error: error.message,
-        stack: error.stack,
-        uploadDir: STEMS_DIR,
+        code: error.code,
+        file: file.originalname,
       });
-      cb(error);
+
+      // Try alternative directory
+      try {
+        const altDir = path.join("/tmp", "audioalchemy", "stems");
+        await fs.mkdir(altDir, { recursive: true, mode: 0o777 });
+        await fs.chmod(altDir, 0o777);
+        console.log("Using alternative upload directory:", altDir);
+        cb(null, altDir);
+      } catch (altError) {
+        cb(error);
+      }
     }
   },
   filename: (req, file, cb) => {
-    console.log("Multer filename handler:", {
-      file: {
-        fieldname: file.fieldname,
-        originalname: file.originalname,
-        encoding: file.encoding,
-        mimetype: file.mimetype,
-      },
-    });
-
+    // Create a safe filename
     const timestamp = Date.now();
     const safeName = file.originalname.replace(/[^a-zA-Z0-9.]/g, "_");
     const filename = `${timestamp}-${safeName}`;
-    console.log("Generated filename:", filename);
+    console.log("Generated filename:", {
+      original: file.originalname,
+      safe: filename,
+    });
     cb(null, filename);
   },
 });
@@ -135,17 +131,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    console.log("Multer fileFilter:", {
-      file: {
-        fieldname: file.fieldname,
-        originalname: file.originalname,
-        encoding: file.encoding,
-        mimetype: file.mimetype,
-      },
-      headers: req.headers,
-    });
-
-    // Accept any audio file type for now
+    // Accept audio files
     if (file.mimetype.startsWith("audio/")) {
       cb(null, true);
     } else {
@@ -157,8 +143,8 @@ const upload = multer({
     }
   },
   limits: {
-    fileSize: 1024 * 1024 * 100, // 100MB limit per file
-    files: 8, // Maximum 8 stems
+    fileSize: 1024 * 1024 * 100, // 100MB limit
+    files: 8, // Maximum 8 files
   },
 }).array("stems", 8);
 
@@ -181,21 +167,12 @@ const cleanupFiles = async (files) => {
 exports.createProject = async (req, res) => {
   let uploadedFiles = [];
   try {
-    console.log("Project creation request received:", {
-      body: req.body,
-      userId: req.userId,
-      headers: {
-        ...req.headers,
-        authorization: req.headers.authorization ? "[exists]" : "[missing]",
-        "content-type": req.headers["content-type"],
-        origin: req.headers.origin,
-      },
+    console.log("Starting project creation:", {
+      contentType: req.headers["content-type"],
+      contentLength: req.headers["content-length"],
     });
 
-    // Ensure directories exist with proper permissions
-    await ensureDirectories();
-
-    // Handle file upload with detailed logging
+    // Handle file upload
     await new Promise((resolve, reject) => {
       upload(req, res, async (err) => {
         if (err) {
@@ -203,14 +180,6 @@ exports.createProject = async (req, res) => {
             message: err.message,
             code: err.code,
             name: err.name,
-            stack: err.stack,
-            multerError: err instanceof multer.MulterError,
-            headers: {
-              ...req.headers,
-              authorization: req.headers.authorization
-                ? "[exists]"
-                : "[missing]",
-            },
           });
           reject(err);
           return;
@@ -218,40 +187,38 @@ exports.createProject = async (req, res) => {
 
         uploadedFiles = req.files || [];
         if (!uploadedFiles.length) {
-          reject(new Error("No files received in request"));
+          reject(new Error("No files received"));
           return;
         }
 
-        // Verify uploaded files exist and are accessible
+        // Verify uploaded files
         for (const file of uploadedFiles) {
           try {
-            await fs.access(file.path, fs.constants.R_OK);
             const stats = await fs.stat(file.path);
-            console.log(`File verified: ${file.path}`, {
+            if (stats.size === 0) {
+              throw new Error("File is empty");
+            }
+            console.log("File verified:", {
+              name: file.originalname,
+              path: file.path,
               size: stats.size,
-              mode: stats.mode.toString(8),
             });
           } catch (error) {
-            console.error(`File verification failed: ${file.path}`, error);
-            reject(new Error(`File verification failed: ${file.originalname}`));
+            reject(
+              new Error(
+                `File verification failed for ${file.originalname}: ${error.message}`
+              )
+            );
             return;
           }
         }
 
-        console.log("Upload successful:", {
-          filesReceived: uploadedFiles.length,
-          files: uploadedFiles.map((f) => ({
-            originalname: f.originalname,
-            path: f.path,
-            size: f.size,
-          })),
-        });
         resolve();
       });
     });
 
-    // Process files with verification
-    const processedDir = PROCESSED_DIR;
+    // Process files
+    const processedDir = global.PROCESSED_DIR || PROCESSED_DIR;
     await fs.mkdir(processedDir, { recursive: true, mode: 0o777 });
 
     const processedFiles = await audioProcessor.processAudioFiles(
@@ -259,23 +226,7 @@ exports.createProject = async (req, res) => {
       processedDir
     );
 
-    // Verify processed files
-    for (const file of processedFiles) {
-      try {
-        await fs.access(file.processedPath, fs.constants.R_OK);
-        const stats = await fs.stat(file.processedPath);
-        console.log(`Processed file verified: ${file.processedPath}`, {
-          size: stats.size,
-          mode: stats.mode.toString(8),
-        });
-      } catch (error) {
-        throw new Error(
-          `Processed file verification failed: ${file.processedPath}`
-        );
-      }
-    }
-
-    // Create project files array
+    // Create project
     const files = processedFiles.map((file) => ({
       originalPath: toRelativePath(file.originalPath),
       processedPath: toRelativePath(file.processedPath),
@@ -285,65 +236,40 @@ exports.createProject = async (req, res) => {
       url: getUrlPath(file.processedPath),
     }));
 
-    // Create and save project
-    const projectData = {
+    const project = new Project({
       name: req.body.name || "Untitled Project",
       mixStyle: req.body.mixStyle || "pop",
       user: req.userId,
       files: files,
       status: "ready",
-    };
+    });
 
-    const project = new Project(projectData);
     const savedProject = await project.save();
-
-    // Prepare response
-    const responseProject = savedProject.toObject();
-    responseProject.files = responseProject.files.map((file) => ({
-      ...file,
-      url: getUrlPath(toAbsolutePath(file.processedPath)),
-    }));
-
-    console.log("Project created successfully:", {
+    console.log("Project saved:", {
       id: savedProject._id,
-      name: savedProject.name,
-      filesCount: savedProject.files.length,
+      files: savedProject.files.length,
     });
 
-    res.status(201).json(responseProject);
+    res.status(201).json({
+      ...savedProject.toObject(),
+      files: savedProject.files.map((file) => ({
+        ...file.toObject(),
+        url: getUrlPath(toAbsolutePath(file.processedPath)),
+      })),
+    });
   } catch (error) {
-    console.error("Project creation error:", {
-      error: {
-        message: error.message,
-        name: error.name,
-        code: error.code,
-        stack: error.stack,
-      },
-      request: {
-        headers: {
-          ...req.headers,
-          authorization: req.headers.authorization ? "[exists]" : "[missing]",
-        },
-      },
+    console.error("Project creation failed:", {
+      error: error.message,
+      stack: error.stack,
     });
 
-    // Clean up any uploaded files
+    // Clean up files
     await cleanupFiles(uploadedFiles);
 
     // Send appropriate error response
-    if (error instanceof multer.MulterError) {
-      return res.status(400).json({
-        message: "File upload error",
-        error: error.message,
-        code: error.code,
-      });
-    }
-
-    const statusCode = error.message.includes("verification failed")
-      ? 400
-      : 500;
+    const statusCode = error instanceof multer.MulterError ? 400 : 500;
     res.status(statusCode).json({
-      message: "Error creating project",
+      message: "Project creation failed",
       error: error.message,
     });
   }

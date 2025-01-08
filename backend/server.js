@@ -12,30 +12,60 @@ require("./models/User");
 // Define upload directories first
 const UPLOAD_DIR =
   process.env.NODE_ENV === "production"
-    ? "/tmp/audioalchemy"
+    ? path.join(process.env.HOME || "/tmp", "audioalchemy")
     : path.join(__dirname, "uploads");
 const STEMS_DIR = path.join(UPLOAD_DIR, "stems");
 const PROCESSED_DIR = path.join(UPLOAD_DIR, "processed");
 const MIXED_DIR = path.join(UPLOAD_DIR, "mixed");
 
 // Create required directories with proper permissions
-[UPLOAD_DIR, STEMS_DIR, PROCESSED_DIR, MIXED_DIR].forEach((dir) => {
-  try {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true, mode: 0o777 });
-      console.log(`Created directory: ${dir}`);
+const ensureDirectoriesExist = async () => {
+  const directories = [UPLOAD_DIR, STEMS_DIR, PROCESSED_DIR, MIXED_DIR];
+
+  for (const dir of directories) {
+    try {
+      await fs.promises.mkdir(dir, { recursive: true, mode: 0o777 });
+      await fs.promises.chmod(dir, 0o777);
+
+      // Verify the directory is writable
+      const testFile = path.join(dir, ".write-test");
+      await fs.promises.writeFile(testFile, "test");
+      await fs.promises.unlink(testFile);
+
+      console.log(`Directory verified and writable: ${dir}`);
+    } catch (error) {
+      console.error(`Error with directory ${dir}:`, {
+        error: error.message,
+        code: error.code,
+        path: dir,
+      });
+
+      // Try alternative directory if in production
+      if (process.env.NODE_ENV === "production" && error.code === "EACCES") {
+        const altDir = path.join("/tmp", "audioalchemy", path.basename(dir));
+        try {
+          await fs.promises.mkdir(altDir, { recursive: true, mode: 0o777 });
+          await fs.promises.chmod(altDir, 0o777);
+          console.log(`Using alternative directory: ${altDir}`);
+
+          // Update the corresponding directory constant
+          if (dir === UPLOAD_DIR) global.UPLOAD_DIR = altDir;
+          else if (dir === STEMS_DIR) global.STEMS_DIR = altDir;
+          else if (dir === PROCESSED_DIR) global.PROCESSED_DIR = altDir;
+          else if (dir === MIXED_DIR) global.MIXED_DIR = altDir;
+        } catch (altError) {
+          console.error(
+            `Error with alternative directory ${altDir}:`,
+            altError
+          );
+        }
+      }
     }
-    // Ensure proper permissions
-    fs.chmodSync(dir, 0o777);
-    console.log(`Set permissions for directory: ${dir}`);
-  } catch (error) {
-    console.error(
-      `Error creating/setting permissions for directory ${dir}:`,
-      error
-    );
-    // Don't exit process, just log the error
   }
-});
+};
+
+// Ensure directories exist before starting the server
+ensureDirectoriesExist().catch(console.error);
 
 const app = express();
 
