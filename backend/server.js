@@ -69,18 +69,54 @@ ensureDirectoriesExist().catch(console.error);
 
 const app = express();
 
-// Simple CORS configuration
-app.use(
-  cors({
-    origin: "https://audio-alchemy-tau.vercel.app",
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+// CORS configuration
+const corsOptions = {
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      "https://audio-alchemy-tau.vercel.app",
+      "http://localhost:5173",
+      "http://localhost:7000",
+      "http://localhost:3000",
+    ];
+
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (
+      allowedOrigins.indexOf(origin) !== -1 ||
+      process.env.NODE_ENV === "development"
+    ) {
+      callback(null, true);
+    } else {
+      console.log("Origin not allowed:", origin);
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Accept",
+    "Origin",
+  ],
+  exposedHeaders: [
+    "Content-Range",
+    "X-Content-Range",
+    "Accept-Ranges",
+    "Content-Length",
+  ],
+  maxAge: 86400,
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
 
 // Handle preflight requests
-app.options("*", cors());
+app.options("*", cors(corsOptions));
 
 // Body parsing middleware
 app.use(express.json({ limit: "500mb" }));
