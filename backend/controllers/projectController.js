@@ -8,10 +8,10 @@ const audioProcessor = require("../services/audioProcessor");
 const mongoose = require("mongoose");
 const os = require("os");
 
-// At the top of the file
+// Define upload directories consistently with routes
 const UPLOAD_DIR =
   process.env.NODE_ENV === "production"
-    ? "/tmp/audioalchemy"
+    ? path.join("/var/data/audioalchemy")
     : path.join(__dirname, "../uploads");
 const STEMS_DIR = path.join(UPLOAD_DIR, "stems");
 const PROCESSED_DIR = path.join(UPLOAD_DIR, "processed");
@@ -53,6 +53,12 @@ const ensureDirectories = async () => {
       await fs.access(dir, fs.constants.W_OK);
       console.log("Directory is writable:", dir);
 
+      // Create a test file to verify write permissions
+      const testFile = path.join(dir, ".write-test");
+      await fs.writeFile(testFile, "test");
+      await fs.unlink(testFile);
+      console.log("Write test successful:", dir);
+
       const stats = await fs.stat(dir);
       console.log("Directory permissions:", {
         path: dir,
@@ -66,7 +72,7 @@ const ensureDirectories = async () => {
         error: error.message,
         stack: error.stack,
       });
-      // Don't throw error, just log it
+      throw error; // Throw error to prevent uploads if directories aren't writable
     }
   }
 };
@@ -78,53 +84,33 @@ ensureDirectories().catch(console.error);
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
     try {
-      // Get the directory from global if it was updated
-      const uploadDir = global.STEMS_DIR || STEMS_DIR;
-
-      // Ensure the directory exists and is writable
-      await fs.mkdir(uploadDir, { recursive: true, mode: 0o777 });
-      await fs.chmod(uploadDir, 0o777);
+      // Ensure the stems directory exists and is writable
+      await fs.mkdir(STEMS_DIR, { recursive: true, mode: 0o777 });
 
       // Test write access
-      const testFile = path.join(uploadDir, ".write-test");
+      const testFile = path.join(STEMS_DIR, ".write-test");
       await fs.writeFile(testFile, "test");
       await fs.unlink(testFile);
 
       console.log("Upload directory verified:", {
-        dir: uploadDir,
+        dir: STEMS_DIR,
         file: file.originalname,
       });
 
-      cb(null, uploadDir);
+      cb(null, STEMS_DIR);
     } catch (error) {
       console.error("Upload directory error:", {
+        dir: STEMS_DIR,
         error: error.message,
-        code: error.code,
-        file: file.originalname,
+        stack: error.stack,
       });
-
-      // Try alternative directory
-      try {
-        const altDir = path.join("/tmp", "audioalchemy", "stems");
-        await fs.mkdir(altDir, { recursive: true, mode: 0o777 });
-        await fs.chmod(altDir, 0o777);
-        console.log("Using alternative upload directory:", altDir);
-        cb(null, altDir);
-      } catch (altError) {
-        cb(error);
-      }
+      cb(error);
     }
   },
   filename: (req, file, cb) => {
-    // Create a safe filename
-    const timestamp = Date.now();
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9.]/g, "_");
-    const filename = `${timestamp}-${safeName}`;
-    console.log("Generated filename:", {
-      original: file.originalname,
-      safe: filename,
-    });
-    cb(null, filename);
+    // Generate a unique filename
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
   },
 });
 
