@@ -69,71 +69,20 @@ ensureDirectoriesExist().catch(console.error);
 
 const app = express();
 
-// CORS configuration
-const allowedOrigins = [
-  "https://audio-alchemy-tau.vercel.app",
-  "https://audioalchemy-gszy.onrender.com",
-  "http://localhost:3000",
-  "http://localhost:5173",
-];
+// Simple CORS configuration
+app.use(
+  cors({
+    origin: "https://audio-alchemy-tau.vercel.app",
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
-// Handle CORS before any other middleware
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
+// Handle preflight requests
+app.options("*", cors());
 
-  // Set CORS headers
-  if (allowedOrigins.includes(origin)) {
-    res.header("Access-Control-Allow-Origin", origin);
-    res.header("Access-Control-Allow-Credentials", "true");
-  } else {
-    // For requests without origin (like Postman or curl)
-    res.header("Access-Control-Allow-Origin", "*");
-  }
-
-  // Allow all necessary headers
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "*");
-  res.header("Access-Control-Expose-Headers", "*");
-  res.header("Access-Control-Max-Age", "86400"); // 24 hours
-
-  // Handle preflight
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
-
-  next();
-});
-
-// Add request logging with more details
-app.use((req, res, next) => {
-  console.log("Request details:", {
-    method: req.method,
-    path: req.path,
-    origin: req.headers.origin || "no origin",
-    host: req.headers.host,
-    contentType: req.headers["content-type"],
-    contentLength: req.headers["content-length"],
-    authorization: req.headers.authorization ? "present" : "missing",
-    body: req.method === "POST" ? req.body : undefined,
-    query: req.query,
-    params: req.params,
-  });
-
-  // Log response
-  const originalSend = res.send;
-  res.send = function (data) {
-    console.log("Response:", {
-      statusCode: res.statusCode,
-      headers: res.getHeaders(),
-      body: data,
-    });
-    return originalSend.apply(res, arguments);
-  };
-
-  next();
-});
-
-// Increase payload limits
+// Body parsing middleware
 app.use(express.json({ limit: "500mb" }));
 app.use(express.urlencoded({ extended: true, limit: "500mb" }));
 
@@ -163,60 +112,10 @@ const serveStatic = (directory, route) => {
   );
 };
 
-// Serve each upload directory
-app.use(
-  "/api/projects/processed",
-  express.static(PROCESSED_DIR, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith(".wav") || filePath.endsWith(".mp3")) {
-        res.set({
-          "Accept-Ranges": "bytes",
-          "Content-Type": filePath.endsWith(".wav")
-            ? "audio/wav"
-            : "audio/mpeg",
-          "Cache-Control": "no-cache",
-          "Content-Disposition": "inline",
-        });
-      }
-    },
-  })
-);
-
-app.use(
-  "/api/projects/mixed",
-  express.static(MIXED_DIR, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith(".wav") || filePath.endsWith(".mp3")) {
-        res.set({
-          "Accept-Ranges": "bytes",
-          "Content-Type": filePath.endsWith(".wav")
-            ? "audio/wav"
-            : "audio/mpeg",
-          "Cache-Control": "no-cache",
-          "Content-Disposition": "inline",
-        });
-      }
-    },
-  })
-);
-
-app.use(
-  "/api/projects/stems",
-  express.static(STEMS_DIR, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith(".wav") || filePath.endsWith(".mp3")) {
-        res.set({
-          "Accept-Ranges": "bytes",
-          "Content-Type": filePath.endsWith(".wav")
-            ? "audio/wav"
-            : "audio/mpeg",
-          "Cache-Control": "no-cache",
-          "Content-Disposition": "inline",
-        });
-      }
-    },
-  })
-);
+// Serve upload directories
+app.use("/api/projects/processed", express.static(PROCESSED_DIR));
+app.use("/api/projects/mixed", express.static(MIXED_DIR));
+app.use("/api/projects/stems", express.static(STEMS_DIR));
 
 // Root path handler
 app.get("/", (req, res) => {
@@ -235,17 +134,7 @@ app.use((err, req, res, next) => {
     stack: err.stack,
     path: req.path,
     method: req.method,
-    headers: req.headers,
   });
-
-  // Ensure CORS headers are set even for errors
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.header("Access-Control-Allow-Origin", origin);
-    res.header("Access-Control-Allow-Credentials", "true");
-  } else {
-    res.header("Access-Control-Allow-Origin", "*");
-  }
 
   res.status(err.status || 500).json({
     message: err.message || "Internal server error",
