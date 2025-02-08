@@ -170,6 +170,18 @@ router.post("/:id/remix", auth, async (req, res) => {
   }
 });
 
+router.delete("/:id", auth, async (req, res) => {
+  try {
+    await projectController.deleteProject(req, res);
+  } catch (error) {
+    console.error("Error deleting project:", error);
+    res.status(500).json({
+      message: "Error deleting project",
+      error: error.message,
+    });
+  }
+});
+
 // File serving routes with better error handling
 const serveFile = async (filePath, res) => {
   try {

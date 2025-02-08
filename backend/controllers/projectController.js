@@ -954,3 +954,60 @@ exports.remixProject = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+exports.deleteProject = async (req, res) => {
+  try {
+    const project = await Project.findOne({
+      _id: req.params.id,
+      user: req.userId,
+    });
+
+    if (!project) {
+      return res.status(404).json({ message: "Project not found" });
+    }
+
+    // Collect all file paths that need to be deleted
+    const filesToDelete = [];
+
+    // Add original stem files
+    if (project.files) {
+      project.files.forEach((file) => {
+        if (file.originalPath) {
+          filesToDelete.push(toAbsolutePath(file.originalPath));
+        }
+        if (file.processedPath) {
+          filesToDelete.push(toAbsolutePath(file.processedPath));
+        }
+      });
+    }
+
+    // Add mixed file if exists
+    if (project.mixedFile?.path) {
+      filesToDelete.push(toAbsolutePath(project.mixedFile.path));
+    }
+
+    // Delete all associated files
+    for (const filePath of filesToDelete) {
+      try {
+        if (fsSync.existsSync(filePath)) {
+          await fs.unlink(filePath);
+          console.log(`Deleted file: ${filePath}`);
+        }
+      } catch (error) {
+        console.error(`Error deleting file ${filePath}:`, error);
+        // Continue with deletion even if some files fail to delete
+      }
+    }
+
+    // Delete the project from the database
+    await Project.findByIdAndDelete(project._id);
+
+    res.status(200).json({ message: "Project deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting project:", error);
+    res.status(500).json({
+      message: "Error deleting project",
+      error: error.message,
+    });
+  }
+};
