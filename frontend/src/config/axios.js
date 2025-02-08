@@ -19,9 +19,6 @@ instance.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
 
-    // Ensure CORS headers are properly set
-    config.headers["Access-Control-Allow-Credentials"] = true;
-
     // Log request details in development
     if (import.meta.env.DEV) {
       console.log("Request:", {

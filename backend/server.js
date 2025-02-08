@@ -127,6 +127,12 @@ const corsOptions = {
     "X-Requested-With",
     "Accept",
     "Origin",
+    "Access-Control-Allow-Credentials",
+    "Access-Control-Allow-Origin",
+  ],
+  exposedHeaders: [
+    "Access-Control-Allow-Origin",
+    "Access-Control-Allow-Credentials",
   ],
   preflightContinue: false,
   optionsSuccessStatus: 204,
