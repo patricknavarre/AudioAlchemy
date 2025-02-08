@@ -87,7 +87,7 @@ const app = express();
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [
-      "https://audio-alchemy-tau.vercel.app",
+      process.env.CORS_ORIGIN, // Production frontend URL
       "http://localhost:5173",
       "http://localhost:5174",
       "http://localhost:7000",
@@ -95,22 +95,32 @@ const corsOptions = {
     ];
 
     // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      return callback(null, true);
-    }
+    if (!origin) return callback(null, true);
 
     if (
-      allowedOrigins.indexOf(origin) !== -1 ||
+      allowedOrigins.includes(origin) ||
       process.env.NODE_ENV === "development"
     ) {
+      // Log successful CORS request in production
+      if (process.env.NODE_ENV === "production") {
+        console.log("CORS request allowed:", {
+          origin,
+          allowedOrigins,
+          nodeEnv: process.env.NODE_ENV,
+        });
+      }
       callback(null, true);
     } else {
-      console.log("Origin not allowed:", origin);
+      console.log("Origin not allowed:", {
+        origin,
+        allowedOrigins,
+        nodeEnv: process.env.NODE_ENV,
+      });
       callback(new Error("Not allowed by CORS"));
     }
   },
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
   allowedHeaders: [
     "Content-Type",
     "Authorization",
@@ -118,19 +128,14 @@ const corsOptions = {
     "Accept",
     "Origin",
   ],
-  exposedHeaders: [
-    "Content-Range",
-    "X-Content-Range",
-    "Accept-Ranges",
-    "Content-Length",
-  ],
-  maxAge: 86400,
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
 };
 
-// Apply CORS middleware
+// Apply CORS middleware before other middleware
 app.use(cors(corsOptions));
 
-// Handle preflight requests
+// Handle preflight requests explicitly
 app.options("*", cors(corsOptions));
 
 // Body parsing middleware
