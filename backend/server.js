@@ -12,7 +12,7 @@ require("./models/User");
 // Define upload directories first
 const UPLOAD_DIR =
   process.env.NODE_ENV === "production"
-    ? path.join(process.env.HOME || "/tmp", "audioalchemy")
+    ? path.join("/var/data/audioalchemy")
     : path.join(__dirname, "uploads");
 const STEMS_DIR = path.join(UPLOAD_DIR, "stems");
 const PROCESSED_DIR = path.join(UPLOAD_DIR, "processed");
@@ -24,15 +24,23 @@ const ensureDirectoriesExist = async () => {
 
   for (const dir of directories) {
     try {
-      await fs.promises.mkdir(dir, { recursive: true, mode: 0o777 });
+      // Create directory if it doesn't exist
+      if (!fs.existsSync(dir)) {
+        await fs.promises.mkdir(dir, { recursive: true, mode: 0o777 });
+        console.log(`Created directory: ${dir}`);
+      }
+
+      // Ensure proper permissions
       await fs.promises.chmod(dir, 0o777);
 
-      // Verify the directory is writable
-      const testFile = path.join(dir, ".write-test");
-      await fs.promises.writeFile(testFile, "test");
-      await fs.promises.unlink(testFile);
-
-      console.log(`Directory verified and writable: ${dir}`);
+      // Verify write permissions without creating test files
+      try {
+        await fs.promises.access(dir, fs.constants.W_OK);
+        console.log(`Directory verified and writable: ${dir}`);
+      } catch (accessError) {
+        console.error(`Directory not writable: ${dir}`, accessError);
+        throw accessError;
+      }
     } catch (error) {
       console.error(`Error with directory ${dir}:`, {
         error: error.message,
@@ -58,14 +66,20 @@ const ensureDirectoriesExist = async () => {
             `Error with alternative directory ${altDir}:`,
             altError
           );
+          throw altError;
         }
+      } else {
+        throw error;
       }
     }
   }
 };
 
 // Ensure directories exist before starting the server
-ensureDirectoriesExist().catch(console.error);
+ensureDirectoriesExist().catch((error) => {
+  console.error("Failed to initialize directories:", error);
+  process.exit(1);
+});
 
 const app = express();
 
@@ -75,6 +89,7 @@ const corsOptions = {
     const allowedOrigins = [
       "https://audio-alchemy-tau.vercel.app",
       "http://localhost:5173",
+      "http://localhost:5174",
       "http://localhost:7000",
       "http://localhost:3000",
     ];
@@ -148,10 +163,63 @@ const serveStatic = (directory, route) => {
   );
 };
 
-// Serve upload directories
-app.use("/api/projects/processed", express.static(PROCESSED_DIR));
-app.use("/api/projects/mixed", express.static(MIXED_DIR));
-app.use("/api/projects/stems", express.static(STEMS_DIR));
+// Serve upload directories with authentication
+app.use(
+  "/api/projects/processed",
+  auth,
+  express.static(PROCESSED_DIR, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".wav") || filePath.endsWith(".mp3")) {
+        res.set({
+          "Accept-Ranges": "bytes",
+          "Content-Type": filePath.endsWith(".wav")
+            ? "audio/wav"
+            : "audio/mpeg",
+          "Cache-Control": "no-cache",
+          "Content-Disposition": "inline",
+        });
+      }
+    },
+  })
+);
+
+app.use(
+  "/api/projects/mixed",
+  auth,
+  express.static(MIXED_DIR, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".wav") || filePath.endsWith(".mp3")) {
+        res.set({
+          "Accept-Ranges": "bytes",
+          "Content-Type": filePath.endsWith(".wav")
+            ? "audio/wav"
+            : "audio/mpeg",
+          "Cache-Control": "no-cache",
+          "Content-Disposition": "inline",
+        });
+      }
+    },
+  })
+);
+
+app.use(
+  "/api/projects/stems",
+  auth,
+  express.static(STEMS_DIR, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".wav") || filePath.endsWith(".mp3")) {
+        res.set({
+          "Accept-Ranges": "bytes",
+          "Content-Type": filePath.endsWith(".wav")
+            ? "audio/wav"
+            : "audio/mpeg",
+          "Cache-Control": "no-cache",
+          "Content-Disposition": "inline",
+        });
+      }
+    },
+  })
+);
 
 // Root path handler
 app.get("/", (req, res) => {
@@ -211,7 +279,7 @@ const initializeServer = async () => {
         });
     };
 
-    const PORT = parseInt(process.env.PORT || "7000");
+    const PORT = parseInt(process.env.PORT || "8000");
     startServer(PORT);
   } catch (error) {
     console.error("Server initialization failed:", error);

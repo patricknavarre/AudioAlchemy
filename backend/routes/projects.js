@@ -158,6 +158,18 @@ router.post("/:id/mix", auth, async (req, res) => {
   }
 });
 
+router.post("/:id/remix", auth, async (req, res) => {
+  try {
+    await projectController.remixProject(req, res);
+  } catch (error) {
+    console.error("Error remixing project:", error);
+    res.status(500).json({
+      message: "Error remixing project",
+      error: error.message,
+    });
+  }
+});
+
 // File serving routes with better error handling
 const serveFile = async (filePath, res) => {
   try {

@@ -3,6 +3,7 @@ import { useParams, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import WaveformPlayer from "../audio/WaveformPlayer";
 import { toast } from "react-hot-toast";
+import { FiVolume2, FiRefreshCw } from "react-icons/fi";
 
 // Utility function to get filename from path
 const getFilename = (filepath) => {
@@ -22,6 +23,9 @@ export default function ProjectView() {
   const [audioUrl, setAudioUrl] = useState(null);
   const [processedFiles, setProcessedFiles] = useState([]);
   const [processingDetails, setProcessingDetails] = useState(null);
+  const [expandedFile, setExpandedFile] = useState(null);
+  const [stemVolumes, setStemVolumes] = useState({});
+  const [isRemixing, setIsRemixing] = useState(false);
 
   // Single useEffect to handle project fetching and URL initialization
   useEffect(() => {
@@ -199,6 +203,70 @@ export default function ProjectView() {
     }
   };
 
+  const handleVolumeChange = (fileId, volume) => {
+    setStemVolumes((prev) => ({
+      ...prev,
+      [fileId]: parseFloat(volume),
+    }));
+  };
+
+  const handleRemix = async () => {
+    try {
+      setIsRemixing(true);
+      setProcessingDetails(null);
+
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_URL}/api/projects/${id}/remix`,
+        { stemVolumes },
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+
+      console.log("Remix response:", response.data);
+
+      if (response.data.processingDetails) {
+        setProcessingDetails(response.data.processingDetails);
+      }
+
+      // Wait a moment for the mix to be processed
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Fetch the updated project data
+      const updatedProjectResponse = await axios.get(
+        `${import.meta.env.VITE_API_URL}/api/projects/${id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+
+      console.log("Updated project data:", updatedProjectResponse.data);
+      const projectData = updatedProjectResponse.data;
+      setProject(projectData);
+
+      // Update audio URLs
+      if (projectData.mixedFile?.path) {
+        const fileName = getFilename(projectData.mixedFile.path);
+        console.log("Setting mixed file URL for:", fileName);
+        setAudioUrl(
+          `${import.meta.env.VITE_API_URL}/api/projects/mixed/${fileName}`
+        );
+      }
+
+      toast.success("Mix updated successfully!");
+    } catch (err) {
+      console.error("Remix error:", err);
+      setError(err.response?.data?.message || "Error updating mix");
+      toast.error("Failed to update mix");
+    } finally {
+      setIsRemixing(false);
+    }
+  };
+
   const renderProcessingDetails = () => {
     if (!processingDetails?.files) return null;
 
@@ -331,6 +399,109 @@ export default function ProjectView() {
     </div>
   );
 
+  const ProcessingInfo = ({ file }) => {
+    if (!file.processing && !file.analysis) return null;
+
+    return (
+      <div className="mt-4 pt-4 border-t border-white/10">
+        {file.analysis?.issues && (
+          <div className="mb-3">
+            <h4 className="text-purple-200 text-sm font-medium mb-2">
+              Issues Detected & Fixed:
+            </h4>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(file.analysis.issues)
+                .filter(([_, value]) => value)
+                .map(([issue]) => (
+                  <span
+                    key={issue}
+                    className="px-2 py-1 rounded-full bg-purple-500/20 text-purple-200 text-xs"
+                  >
+                    {issue.replace(/([A-Z])/g, " $1").toLowerCase()}
+                  </span>
+                ))}
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          {file.analysis?.frequency && (
+            <div>
+              <h4 className="text-purple-200 text-sm font-medium mb-2">
+                Frequency Analysis:
+              </h4>
+              <ul className="list-disc list-inside text-purple-200/70 text-sm">
+                {Object.entries(file.analysis.frequency.bands || {}).map(
+                  ([band, data]) => (
+                    <li key={band}>
+                      {band}: {data?.energy?.toFixed(2) || 0} energy
+                    </li>
+                  )
+                )}
+              </ul>
+            </div>
+          )}
+
+          {(file.analysis?.dynamics || file.analysis?.stereo) && (
+            <div>
+              <h4 className="text-purple-200 text-sm font-medium mb-2">
+                Dynamics & Stereo:
+              </h4>
+              <ul className="list-disc list-inside text-purple-200/70 text-sm">
+                {file.analysis?.dynamics?.crestFactor && (
+                  <li>
+                    Crest Factor:{" "}
+                    {file.analysis.dynamics.crestFactor.toFixed(1)}
+                  </li>
+                )}
+                {file.analysis?.stereo?.width_ratio && (
+                  <li>
+                    Stereo Width: {file.analysis.stereo.width_ratio.toFixed(2)}
+                  </li>
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {file.processing?.filters && file.processing.filters.length > 0 && (
+          <div className="mt-3">
+            <h4 className="text-purple-200 text-sm font-medium mb-2">
+              Processing Applied:
+            </h4>
+            <div className="flex flex-wrap gap-2">
+              {file.processing.filters.map((filter, i) => (
+                <span
+                  key={i}
+                  className="px-2 py-1 rounded-full bg-purple-500/20 text-purple-200 text-xs"
+                >
+                  {filter.filter}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {file.processing?.improvements && (
+          <div className="mt-3">
+            <h4 className="text-purple-200 text-sm font-medium mb-2">
+              Improvements Made:
+            </h4>
+            <div className="grid grid-cols-2 gap-2 text-sm text-purple-200/70">
+              {Object.entries(file.processing.improvements).map(
+                ([key, value]) => (
+                  <div key={key}>
+                    <span className="font-medium">{key}:</span> {value}
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 px-4 py-8">
       {loading ? (
@@ -411,15 +582,43 @@ export default function ProjectView() {
                 Processed Files
               </h2>
               <div className="space-y-6">
-                {processedFiles?.map((file, index) => (
+                {processedFiles.map((file, index) => (
                   <div
                     key={index}
                     className="p-6 rounded-xl backdrop-blur-sm bg-white/5 border border-white/10"
                   >
-                    <p className="font-medium text-white mb-3">
-                      {file.stemType}
-                    </p>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="font-medium text-white">{file.stemType}</p>
+                      <button
+                        onClick={() =>
+                          setExpandedFile(expandedFile === index ? null : index)
+                        }
+                        className="text-purple-200 hover:text-white transition-colors"
+                      >
+                        {expandedFile === index
+                          ? "Hide Details"
+                          : "Show Details"}
+                      </button>
+                    </div>
                     <WaveformPlayer audioUrl={file.audioUrl} height={80} />
+                    <div className="mt-4 flex items-center space-x-4">
+                      <FiVolume2 className="text-purple-200" />
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.1"
+                        value={stemVolumes[file._id] || 1}
+                        onChange={(e) =>
+                          handleVolumeChange(file._id, e.target.value)
+                        }
+                        className="w-full h-2 bg-purple-200/20 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-purple-200 min-w-[3rem]">
+                        {(stemVolumes[file._id] || 1).toFixed(1)}x
+                      </span>
+                    </div>
+                    {expandedFile === index && <ProcessingInfo file={file} />}
                   </div>
                 ))}
               </div>
@@ -437,14 +636,35 @@ export default function ProjectView() {
                     <div className="p-6 rounded-xl backdrop-blur-sm bg-white/5 border border-white/10 mb-4">
                       <WaveformPlayer audioUrl={audioUrl} height={120} />
                     </div>
-                    <button
-                      onClick={handleDownload}
-                      className="w-full p-4 rounded-xl font-medium transition-all duration-200
-                        bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 
-                        hover:to-pink-600 text-white hover:shadow-lg hover:-translate-y-0.5"
-                    >
-                      Download Mix
-                    </button>
+                    <div className="flex gap-4">
+                      <button
+                        onClick={handleRemix}
+                        disabled={isRemixing}
+                        className={`flex-1 p-4 rounded-xl font-medium transition-all duration-200
+                          ${
+                            isRemixing
+                              ? "bg-gray-600 cursor-not-allowed"
+                              : "bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white hover:shadow-lg hover:-translate-y-0.5"
+                          }`}
+                      >
+                        {isRemixing ? (
+                          <div className="flex items-center justify-center space-x-3">
+                            <FiRefreshCw className="animate-spin" />
+                            <span>Updating Mix...</span>
+                          </div>
+                        ) : (
+                          "Update Mix"
+                        )}
+                      </button>
+                      <button
+                        onClick={handleDownload}
+                        className="flex-1 p-4 rounded-xl font-medium transition-all duration-200
+                          bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 
+                          hover:to-pink-600 text-white hover:shadow-lg hover:-translate-y-0.5"
+                      >
+                        Download Mix
+                      </button>
+                    </div>
                   </>
                 )}
               </div>

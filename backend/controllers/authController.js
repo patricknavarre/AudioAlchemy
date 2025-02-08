@@ -1,150 +1,148 @@
-const User = require('../models/User');
-const jwt = require('jsonwebtoken');
-const { validationResult } = require('express-validator');
-const mongoose = require('mongoose');
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const User = require("../models/User");
+const { validationResult } = require("express-validator");
 
 exports.register = async (req, res) => {
   try {
-    console.log('Register request received:', {
-      body: req.body,
-      headers: req.headers,
-      url: req.url,
-      method: req.method,
-      path: req.path,
-      env: {
-        nodeEnv: process.env.NODE_ENV,
-        jwtSecret: process.env.JWT_SECRET ? '[exists]' : '[missing]',
-        mongoUri: process.env.MONGODB_URI ? '[exists]' : '[missing]'
-      }
-    });
-
-    // Validation
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      console.log('Validation errors:', errors.array());
-      return res.status(400).json({ 
-        message: 'Validation failed', 
-        errors: errors.array() 
-      });
-    }
-
+    console.log("Starting registration process");
     const { email, password, name } = req.body;
-    console.log('Processing registration for:', email);
 
-    if (!process.env.JWT_SECRET) {
-      console.error('JWT_SECRET is not set');
-      return res.status(500).json({ message: 'Server configuration error - JWT_SECRET missing' });
-    }
-
-    if (!process.env.MONGODB_URI) {
-      console.error('MONGODB_URI is not set');
-      return res.status(500).json({ message: 'Server configuration error - MONGODB_URI missing' });
-    }
-
-    // Check MongoDB connection
-    if (mongoose.connection.readyState !== 1) {
-      console.error('MongoDB not connected. Current state:', mongoose.connection.readyState);
-      return res.status(500).json({ message: 'Database connection error' });
+    // Validate input
+    if (!email || !password || !name) {
+      console.log("Registration validation failed:", {
+        email,
+        name,
+        hasPassword: !!password,
+      });
+      return res.status(400).json({ message: "All fields are required" });
     }
 
     // Check if user exists
-    let user = await User.findOne({ email: email.toLowerCase() });
+    let user = await User.findOne({ email });
     if (user) {
-      console.log('User already exists:', email);
-      return res.status(400).json({ message: 'User already exists' });
+      console.log("User already exists:", { email });
+      return res.status(400).json({ message: "User already exists" });
     }
 
-    // Create new user
+    // Create user
+    console.log("Creating new user:", { email, name });
     user = new User({
-      email: email.toLowerCase(),
+      email,
       password,
-      name
+      name,
     });
 
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(password, salt);
+
+    // Save user
     await user.save();
-    console.log('User created successfully:', user._id);
+    console.log("User saved successfully:", { userId: user._id });
 
-    // Generate JWT
-    const token = jwt.sign(
-      { userId: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    // Send response
-    const response = {
-      token,
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name
-      }
+    // Create token
+    const payload = {
+      userId: user._id,
     };
-    console.log('Sending successful response:', response);
-    res.status(201).json(response);
+
+    jwt.sign(
+      payload,
+      process.env.JWT_SECRET,
+      { expiresIn: "24h" },
+      (err, token) => {
+        if (err) throw err;
+        console.log("Token generated successfully");
+        res.status(201).json({
+          token,
+          user: {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+          },
+        });
+      }
+    );
   } catch (error) {
-    console.error('Registration error:', {
-      error: error.message,
-      stack: error.stack,
-      name: error.name,
-      code: error.code,
-      mongooseState: mongoose.connection.readyState
-    });
-    res.status(500).json({ 
-      message: 'Server error during registration',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error("Registration error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 };
 
 exports.login = async (req, res) => {
   try {
-    // Validation
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        message: 'Validation failed', 
-        errors: errors.array() 
-      });
-    }
-
+    console.log("Processing login request");
     const { email, password } = req.body;
 
-    // Find user
-    const user = await User.findOne({ email: email.toLowerCase() });
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    // Check for user
+    const user = await User.findOne({ email });
     if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    // Check password
-    const isMatch = await user.comparePassword(password);
+    // Validate password
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    // Generate JWT
-    const token = jwt.sign(
-      { userId: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
+    // Create token
+    const payload = {
+      userId: user._id,
+    };
 
-    // Send response
-    res.json({
-      token,
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name
+    jwt.sign(
+      payload,
+      process.env.JWT_SECRET,
+      { expiresIn: "24h" },
+      (err, token) => {
+        if (err) throw err;
+        console.log("Login successful, token generated");
+        res.json({
+          token,
+          user: {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+          },
+        });
       }
-    });
+    );
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ message: 'Server error during login' });
+    console.error("Login error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Validate token middleware
+exports.validateToken = async (req, res) => {
+  try {
+    console.log("Validating token");
+    const user = await User.findById(req.user.id).select("-password");
+    if (!user) {
+      console.log("User not found for token");
+      return res.status(404).json({ message: "User not found" });
+    }
+    console.log("Token validation successful:", { userId: user._id });
+    res.json(user);
+  } catch (error) {
+    console.error("Token validation error:", {
+      message: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      message: "Error validating token",
+      error: error.message,
+    });
   }
 };
 
 // Add a test route to verify the server is running
 exports.test = async (req, res) => {
-  res.json({ message: 'Auth server is running' });
-}; 
+  res.json({ message: "Auth server is running" });
+};

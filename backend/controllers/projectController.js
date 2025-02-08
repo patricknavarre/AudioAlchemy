@@ -2,8 +2,8 @@ const Project = require("../models/Project");
 const { spawn } = require("child_process");
 const path = require("path");
 const multer = require("multer");
-const fs = require("fs").promises;
 const fsSync = require("fs");
+const fs = require("fs").promises;
 const audioProcessor = require("../services/audioProcessor");
 const mongoose = require("mongoose");
 const os = require("os");
@@ -46,18 +46,15 @@ const ensureDirectories = async () => {
 
   for (const dir of dirs) {
     try {
-      await fs.mkdir(dir, { recursive: true, mode: 0o777 });
-      console.log("Directory created/verified:", dir);
+      // Create directory if it doesn't exist
+      if (!fsSync.existsSync(dir)) {
+        await fs.mkdir(dir, { recursive: true, mode: 0o777 });
+        console.log("Directory created:", dir);
+      }
 
       // Verify directory permissions
-      await fs.access(dir, fs.constants.W_OK);
+      await fs.access(dir, fsSync.constants.W_OK);
       console.log("Directory is writable:", dir);
-
-      // Create a test file to verify write permissions
-      const testFile = path.join(dir, ".write-test");
-      await fs.writeFile(testFile, "test");
-      await fs.unlink(testFile);
-      console.log("Write test successful:", dir);
 
       const stats = await fs.stat(dir);
       console.log("Directory permissions:", {
@@ -72,7 +69,7 @@ const ensureDirectories = async () => {
         error: error.message,
         stack: error.stack,
       });
-      throw error; // Throw error to prevent uploads if directories aren't writable
+      throw error;
     }
   }
 };
@@ -85,12 +82,10 @@ const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
     try {
       // Ensure the stems directory exists and is writable
-      await fs.mkdir(STEMS_DIR, { recursive: true, mode: 0o777 });
-
-      // Test write access
-      const testFile = path.join(STEMS_DIR, ".write-test");
-      await fs.writeFile(testFile, "test");
-      await fs.unlink(testFile);
+      if (!fsSync.existsSync(STEMS_DIR)) {
+        await fs.mkdir(STEMS_DIR, { recursive: true, mode: 0o777 });
+      }
+      await fs.access(STEMS_DIR, fsSync.constants.W_OK);
 
       console.log("Upload directory verified:", {
         dir: STEMS_DIR,
@@ -132,7 +127,11 @@ const upload = multer({
     fileSize: 1024 * 1024 * 100, // 100MB limit
     files: 8, // Maximum 8 files
   },
-}).array("stems", 8);
+}).fields([
+  { name: "stems", maxCount: 8 },
+  { name: "name", maxCount: 1 },
+  { name: "mixStyle", maxCount: 1 },
+]);
 
 // Helper function to clean up files in case of error
 const cleanupFiles = async (files) => {
@@ -171,11 +170,18 @@ exports.createProject = async (req, res) => {
           return;
         }
 
-        uploadedFiles = req.files || [];
+        uploadedFiles = req.files?.stems || [];
         if (!uploadedFiles.length) {
           reject(new Error("No files received"));
           return;
         }
+
+        // Log received form data
+        console.log("Received form data:", {
+          name: req.body.name,
+          mixStyle: req.body.mixStyle,
+          filesCount: uploadedFiles.length,
+        });
 
         // Verify uploaded files
         for (const file of uploadedFiles) {
@@ -207,41 +213,138 @@ exports.createProject = async (req, res) => {
     const processedDir = global.PROCESSED_DIR || PROCESSED_DIR;
     await fs.mkdir(processedDir, { recursive: true, mode: 0o777 });
 
-    const processedFiles = await audioProcessor.processAudioFiles(
-      uploadedFiles,
-      processedDir
-    );
+    const processedFiles = [];
+    for (const file of uploadedFiles) {
+      try {
+        const outputPath = path.join(
+          processedDir,
+          `processed_${path.basename(file.path)}`
+        );
 
-    // Create project
-    const files = processedFiles.map((file) => ({
-      originalPath: toRelativePath(file.originalPath),
-      processedPath: toRelativePath(file.processedPath),
-      type: path.extname(file.originalPath).slice(1).toLowerCase() || "wav",
-      size: fsSync.statSync(file.originalPath).size,
-      stemType: "other",
-      url: getUrlPath(file.processedPath),
-    }));
+        // Process the file and get the analysis and filters applied
+        const { processedPath, filters } =
+          await audioProcessor.processAudioFile(file.path, outputPath);
 
-    const project = new Project({
+        // Verify the processed file exists and has content
+        const initialProcessedStats = await fs.stat(processedPath);
+        if (initialProcessedStats.size === 0) {
+          throw new Error("Processed file is empty");
+        }
+
+        // Map the improvements based on the filters applied
+        const improvements = filters.map((filter) => {
+          switch (filter.filter) {
+            case "equalizer":
+              return filter.options.g < 0
+                ? `Reduced ${
+                    filter.options.f < 1000 ? "low-mid" : "high"
+                  } frequencies around ${Math.round(filter.options.f)}Hz`
+                : `Enhanced ${
+                    filter.options.f < 1000 ? "low-mid" : "high"
+                  } frequencies around ${Math.round(filter.options.f)}Hz`;
+            case "acompressor":
+              return `Improved dynamic range with ${filter.options.ratio}:1 compression`;
+            case "aphaser":
+              return "Corrected phase issues";
+            case "stereotools":
+              return "Optimized stereo width";
+            case "anlmdn":
+              return "Reduced background noise";
+            default:
+              return `Applied ${filter.filter} processing`;
+          }
+        });
+
+        // Get file stats for size
+        const stats = await fs.stat(file.path);
+        const processedFileStats = await fs.stat(processedPath);
+
+        processedFiles.push({
+          originalName: file.originalname,
+          originalPath: toRelativePath(file.path),
+          processedPath: toRelativePath(processedPath),
+          type: file.mimetype || "audio/wav",
+          size: stats.size,
+          processedSize: processedFileStats.size,
+          stemType: file.originalname.toLowerCase().includes("vo")
+            ? "vocals"
+            : "music",
+          improvements,
+          processingDetails: {
+            filters: filters.map((f) => ({
+              type: f.filter,
+              settings: f.options,
+            })),
+          },
+        });
+
+        console.log("File processed successfully:", {
+          file: file.originalname,
+          type: file.mimetype,
+          size: stats.size,
+          improvements,
+          filters: filters.length,
+        });
+      } catch (error) {
+        console.error("Error processing file:", {
+          file: file.originalname,
+          error: error.message,
+          stack: error.stack,
+        });
+        throw error;
+      }
+    }
+
+    // Create project with processed files
+    if (!Array.isArray(processedFiles)) {
+      throw new Error("No processed files available");
+    }
+
+    const projectData = {
       name: req.body.name || "Untitled Project",
-      mixStyle: req.body.mixStyle || "pop",
       user: req.userId,
-      files: files,
-      status: "ready",
+      mixStyle: req.body.mixStyle,
+      status: "processing",
+      files: processedFiles.map((file) => ({
+        originalName: file.originalName,
+        originalPath: file.originalPath,
+        processedPath: file.processedPath,
+        type: "audio/wav", // Add required field
+        size: file.size || 0, // Add required field
+        stemType: file.stemType || "unknown", // Add required field
+        improvements: file.improvements,
+        processingDetails: file.processingDetails,
+      })),
+    };
+
+    console.log("Creating project with data:", {
+      name: projectData.name,
+      user: projectData.user,
+      mixStyle: projectData.mixStyle,
+      filesCount: projectData.files.length,
     });
 
-    const savedProject = await project.save();
-    console.log("Project saved:", {
-      id: savedProject._id,
-      files: savedProject.files.length,
+    const project = new Project(projectData);
+    await project.save();
+
+    console.log("Project created successfully:", {
+      id: project._id,
+      name: project.name,
+      filesCount: project.files.length,
     });
 
     res.status(201).json({
-      ...savedProject.toObject(),
-      files: savedProject.files.map((file) => ({
-        ...file.toObject(),
-        url: getUrlPath(toAbsolutePath(file.processedPath)),
-      })),
+      message: "Project created successfully",
+      project: {
+        _id: project._id,
+        name: project.name,
+        mixStyle: project.mixStyle,
+        files: project.files.map((file) => ({
+          ...file.toObject(),
+          originalUrl: getUrlPath(toAbsolutePath(file.originalPath)),
+          processedUrl: getUrlPath(toAbsolutePath(file.processedPath)),
+        })),
+      },
     });
   } catch (error) {
     console.error("Project creation failed:", {
@@ -766,5 +869,88 @@ const handleMix = async (req, res) => {
   } catch (err) {
     console.error("Mix error:", err);
     res.status(500).json({ message: err.message });
+  }
+};
+
+exports.remixProject = async (req, res) => {
+  try {
+    const project = await Project.findOne({
+      _id: req.params.id,
+      user: req.userId,
+    });
+
+    if (!project) {
+      return res.status(404).json({ message: "Project not found" });
+    }
+
+    if (!project.files || project.files.length === 0) {
+      return res.status(400).json({ message: "No files to mix" });
+    }
+
+    const { stemVolumes } = req.body;
+    if (!stemVolumes) {
+      return res
+        .status(400)
+        .json({ message: "No volume adjustments provided" });
+    }
+
+    // Create mix filename and paths
+    const mixFileName = `mix_${project._id}_${Date.now()}.wav`;
+    const mixPath = path.join(MIXED_DIR, mixFileName);
+
+    // Ensure mixed directory exists
+    await fs.mkdir(MIXED_DIR, { recursive: true, mode: 0o777 });
+
+    // Convert relative paths to absolute for processing and add volume levels
+    const filesWithAbsolutePaths = project.files.map((file) => ({
+      ...file.toObject(),
+      processedPath: toAbsolutePath(file.processedPath),
+      volume: stemVolumes[file._id] || 1, // Default to 1 if no volume specified
+    }));
+
+    // Log what we're about to do
+    console.log("Starting remix:", {
+      projectId: project._id,
+      mixFileName,
+      mixPath,
+      fileCount: project.files.length,
+      files: filesWithAbsolutePaths.map((f) => ({
+        path: f.processedPath,
+        volume: f.volume,
+        exists: fsSync.existsSync(f.processedPath),
+      })),
+    });
+
+    // Create the mix with volume adjustments
+    await audioProcessor.mixAudioFiles(filesWithAbsolutePaths, mixPath);
+
+    // Store relative path in database
+    project.mixedFile = {
+      fileName: mixFileName,
+      path: toRelativePath(mixPath),
+      createdAt: new Date(),
+    };
+
+    await project.save();
+
+    // Log success
+    console.log("Remix completed successfully:", {
+      projectId: project._id,
+      mixPath,
+      exists: fsSync.existsSync(mixPath),
+    });
+
+    // Send response with URL
+    res.json({
+      message: "Remix created successfully",
+      mixedFile: {
+        ...project.mixedFile.toObject(),
+        path: toAbsolutePath(project.mixedFile.path),
+        url: getUrlPath(toAbsolutePath(project.mixedFile.path)),
+      },
+    });
+  } catch (error) {
+    console.error("Remix error:", error);
+    res.status(500).json({ message: error.message });
   }
 };

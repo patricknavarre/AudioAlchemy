@@ -52,17 +52,27 @@ router.post("/register", async (req, res) => {
 // Login route with error handling
 router.post("/login", async (req, res) => {
   try {
-    console.log("Processing login request");
-    const result = await authController.login(req, res);
-    console.log("Login successful:", {
-      userId: result?.user?._id,
-      email: result?.user?.email,
+    console.log("Processing login request:", {
+      email: req.body.email,
+      hasPassword: !!req.body.password,
+      headers: req.headers,
     });
+
+    if (!req.body.email || !req.body.password) {
+      console.log("Missing required fields");
+      return res.status(400).json({
+        message: "Email and password are required",
+      });
+    }
+
+    const result = await authController.login(req, res);
+    console.log("Login processed successfully");
     return result;
   } catch (error) {
     console.error("Login error:", {
       message: error.message,
       stack: error.stack,
+      type: error.name,
     });
     return res.status(500).json({
       message: "Login failed",
@@ -71,22 +81,21 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// Validate token route
-router.get("/validate", auth, async (req, res) => {
+// Token validation endpoint
+router.get("/validate", auth, (req, res) => {
   try {
-    console.log("Processing token validation request");
-    const result = await authController.validateToken(req, res);
-    console.log("Token validation successful");
-    return result;
+    console.log("Token validation request:", {
+      userId: req.userId,
+      method: req.method,
+      path: req.path,
+    });
+    res.status(200).json({ valid: true, userId: req.userId });
   } catch (error) {
     console.error("Token validation error:", {
       message: error.message,
       stack: error.stack,
     });
-    return res.status(500).json({
-      message: "Token validation failed",
-      error: error.message,
-    });
+    res.status(401).json({ valid: false, message: "Invalid token" });
   }
 });
 
