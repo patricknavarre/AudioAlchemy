@@ -6,7 +6,7 @@ export default function Navigation() {
   const { user, logout } = useAuth();
 
   return (
-    <nav className="bg-gray-900/50 backdrop-blur-md text-white p-4 fixed w-full z-50">
+    <nav className="bg-gradient-to-r from-indigo-900/80 via-purple-900/80 to-pink-800/80 backdrop-blur-md text-white p-4 fixed w-full z-50">
       <div className="max-w-6xl mx-auto flex justify-between items-center">
         <Link
           to="/"

@@ -188,7 +188,7 @@ const ProjectCreate = () => {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900 p-4 md:p-8"
+      className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 pt-28 p-4 md:p-8"
     >
       <div className="max-w-6xl mx-auto">
         <motion.div
@@ -198,7 +198,7 @@ const ProjectCreate = () => {
           className="flex justify-between items-center mb-8"
         >
           <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-200 to-pink-200">
-            Create New Project
+            
           </h1>
         </motion.div>
 
@@ -248,7 +248,7 @@ const ProjectCreate = () => {
                   whileTap={{ scale: 0.98 }}
                   className={`relative p-6 rounded-2xl transition-all duration-300 overflow-hidden group ${
                     mixStyle === style.id
-                      ? "ring-2 ring-purple-400 shadow-lg scale-[1.02]"
+                      ? "ring-4 ring-purple-400 shadow-xl scale-[1.03] shadow-purple-500/25"
                       : "hover:ring-2 hover:ring-purple-400/50"
                   }`}
                 >
@@ -291,7 +291,7 @@ const ProjectCreate = () => {
                   whileTap={{ scale: 0.98 }}
                   className={`relative p-6 rounded-2xl transition-all duration-300 overflow-hidden group ${
                     mixStyle === style.id
-                      ? "ring-2 ring-purple-400 shadow-lg scale-[1.02]"
+                      ? "ring-4 ring-purple-400 shadow-xl scale-[1.03] shadow-purple-500/25"
                       : "hover:ring-2 hover:ring-purple-400/50"
                   }`}
                 >
