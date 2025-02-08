@@ -1,5 +1,5 @@
-import { Link } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { Link } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 
 export default function Navigation() {
   const { user, logout } = useAuth();
@@ -10,17 +10,20 @@ export default function Navigation() {
         <Link to="/" className="text-xl font-bold">
           AudioAlchemy
         </Link>
-        
+
         <div className="flex items-center space-x-4">
           {user ? (
             <>
-              <Link to="/projects" className="hover:text-purple-300 transition-colors">
+              <Link to="/" className="hover:text-purple-300 transition-colors">
                 Projects
               </Link>
-              <Link to="/projects/new" className="hover:text-purple-300 transition-colors">
+              <Link
+                to="/projects/new"
+                className="hover:text-purple-300 transition-colors"
+              >
                 New Project
               </Link>
-              <button 
+              <button
                 onClick={logout}
                 className="hover:text-purple-300 transition-colors"
               >
@@ -29,10 +32,16 @@ export default function Navigation() {
             </>
           ) : (
             <>
-              <Link to="/login" className="hover:text-purple-300 transition-colors">
+              <Link
+                to="/login"
+                className="hover:text-purple-300 transition-colors"
+              >
                 Login
               </Link>
-              <Link to="/register" className="hover:text-purple-300 transition-colors">
+              <Link
+                to="/register"
+                className="hover:text-purple-300 transition-colors"
+              >
                 Register
               </Link>
             </>
@@ -41,4 +50,4 @@ export default function Navigation() {
       </div>
     </nav>
   );
-} 
+}
