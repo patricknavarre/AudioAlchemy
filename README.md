@@ -1,5 +1,7 @@
 # 🎵 AudioAlchemy
 
+**Copyright © 2024 Patrick Navarre. All rights reserved.**
+
 AudioAlchemy is a modern web application that transforms your audio stems into perfectly mixed tracks. Using advanced audio processing and AI-driven analysis, it helps you achieve professional-quality mixes with ease.
 
 ## ✨ Features
@@ -22,12 +24,14 @@ AudioAlchemy is a modern web application that transforms your audio stems into p
 ## 🛠️ Installation
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/patricknavarre/AudioAlchemy.git
 cd AudioAlchemy
 ```
 
 2. Install dependencies:
+
 ```bash
 # Install backend dependencies
 cd backend
@@ -39,6 +43,7 @@ npm install
 ```
 
 3. Set up environment variables:
+
 ```bash
 # Backend (.env)
 MONGODB_URI=your_mongodb_uri
@@ -50,6 +55,7 @@ VITE_API_URL=http://localhost:5000
 ```
 
 4. Run the application:
+
 ```bash
 # Run backend (from backend directory)
 npm start
@@ -67,10 +73,16 @@ npm run dev
 5. Let AudioAlchemy work its magic
 6. Download your professionally mixed track
 
+## 📝 Legal Notice
+
+This software is protected by copyright law and international treaties. Unauthorized reproduction or distribution of this software, or any portion of it, may result in severe civil and criminal penalties, and will be prosecuted to the maximum extent possible under law.
+
+### License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+**Important**: While this is open-source software, any commercial use, modification, or distribution must maintain the original copyright notice and adhere to the terms specified in the LICENSE file.
+
 ## 🤝 Contributing
 
-Contributions, issues, and feature requests are welcome! Feel free to check [issues page](https://github.com/patricknavarre/AudioAlchemy/issues).
-
-## 📝 License
-
-This project is [MIT](LICENSE) licensed. 
+Contributions, issues, and feature requests are welcome! However, all contributions become part of the licensed codebase and must maintain the original copyright notice.
