@@ -7,44 +7,68 @@ import {
   FiZap,
   FiLayers,
   FiSliders,
+  FiBarChart2,
+  FiActivity,
+  FiRadio,
 } from "react-icons/fi";
 
 const features = [
   {
+    icon: <FiBarChart2 className="w-6 h-6" />,
+    title: "Professional Loudness Control",
+    description:
+      "Industry-standard LUFS metering, loudness normalization, and precise gain staging for broadcast-ready audio.",
+  },
+  {
     icon: <FiMusic className="w-6 h-6" />,
-    title: "Stem Upload",
+    title: "Studio-Grade Mixing",
     description:
-      "Upload up to 8 audio stems in various formats including WAV, MP3, and AIFF.",
+      "24-bit/48kHz processing, advanced stem control, and professional mixing chains for pristine audio quality.",
   },
   {
-    icon: <FiSettings className="w-6 h-6" />,
-    title: "Smart Mixing",
+    icon: <FiActivity className="w-6 h-6" />,
+    title: "Advanced Audio Analysis",
     description:
-      "Advanced AI-powered mixing algorithms that analyze and enhance your audio.",
+      "Real-time loudness measurement (LUFS), dynamic range analysis (LRA), and true peak metering (dBTP).",
   },
   {
-    icon: <FiZap className="w-6 h-6" />,
-    title: "Real-time Processing",
+    icon: <FiRadio className="w-6 h-6" />,
+    title: "Industry-Ready Output",
     description:
-      "Process your audio in real-time with professional-grade effects and filters.",
-  },
-  {
-    icon: <FiLayers className="w-6 h-6" />,
-    title: "Multiple Mix Styles",
-    description:
-      "Choose from various mix styles including Pop, Rock, Electronic, and more.",
+      "Optimized presets for broadcast, streaming, music production, and content creation.",
   },
   {
     icon: <FiSliders className="w-6 h-6" />,
-    title: "Advanced Controls",
+    title: "Precision Controls",
     description:
-      "Fine-tune your mix with precise volume controls and stem adjustments.",
+      "Fine-tune your mix with target LUFS adjustment (-23 to -14 LUFS) and post-normalization gain control.",
   },
   {
-    icon: <FiDownload className="w-6 h-6" />,
-    title: "High-Quality Export",
+    icon: <FiZap className="w-6 h-6" />,
+    title: "Intelligent Processing",
     description:
-      "Export your final mix in high-quality formats ready for distribution.",
+      "AI-powered mixing algorithms that analyze and enhance your audio automatically.",
+  },
+];
+
+const industries = [
+  {
+    title: "Broadcast & Streaming",
+    description: "Television and streaming platform compliant mixes",
+    gradient: "from-blue-500 to-indigo-500",
+    icon: "📺",
+  },
+  {
+    title: "Music Production",
+    description: "Professional stem mixing and processing",
+    gradient: "from-purple-500 to-pink-500",
+    icon: "🎵",
+  },
+  {
+    title: "Content Creation",
+    description: "Optimized for YouTube, podcasts, and social media",
+    gradient: "from-orange-500 to-red-500",
+    icon: "🎬",
   },
 ];
 
@@ -60,11 +84,12 @@ export default function HomePage() {
           className="relative z-10 max-w-4xl mx-auto"
         >
           <h1 className="text-5xl md:text-6xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-purple-200 via-pink-200 to-purple-200">
-            Transform Your Audio with AI-Powered Mixing
+            Professional Audio Mixing with AI-Powered Control
           </h1>
           <p className="text-xl text-purple-200 mb-8 max-w-2xl mx-auto">
-            AudioAlchemy combines cutting-edge AI technology with professional
-            audio processing to deliver studio-quality mixes automatically.
+            Transform your stems into broadcast-ready mixes with
+            industry-standard loudness control, professional processing chains,
+            and intelligent audio analysis.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
@@ -97,11 +122,11 @@ export default function HomePage() {
             className="text-center mb-16"
           >
             <h2 className="text-4xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-purple-200 to-pink-200">
-              Powerful Features
+              Professional-Grade Features
             </h2>
             <p className="text-lg text-purple-200 max-w-2xl mx-auto">
-              Everything you need to create professional-quality mixes without
-              the complexity of traditional DAWs.
+              Studio-quality audio processing with advanced loudness control and
+              precise metering.
             </p>
           </motion.div>
 
@@ -131,6 +156,49 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Industry Section */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            className="text-center mb-16"
+          >
+            <h2 className="text-4xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-purple-200 to-pink-200">
+              Industry-Ready Solutions
+            </h2>
+            <p className="text-lg text-purple-200 max-w-2xl mx-auto">
+              Optimized presets and processing chains for every professional
+              audio application.
+            </p>
+          </motion.div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {industries.map((industry, index) => (
+              <motion.div
+                key={industry.title}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.2 + index * 0.1 }}
+                className="p-8 rounded-2xl backdrop-blur-sm bg-white/5 border border-white/10
+                  hover:border-purple-500/50 transition-all duration-300"
+              >
+                <div
+                  className={`bg-gradient-to-br ${industry.gradient} p-4 rounded-xl w-16 h-16 flex items-center justify-center text-3xl mb-4`}
+                >
+                  {industry.icon}
+                </div>
+                <h3 className="text-2xl font-semibold text-white mb-2">
+                  {industry.title}
+                </h3>
+                <p className="text-purple-200">{industry.description}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* CTA Section */}
       <section className="py-20 px-4 sm:px-6 lg:px-8">
         <motion.div
@@ -140,12 +208,12 @@ export default function HomePage() {
           className="max-w-4xl mx-auto text-center"
         >
           <h2 className="text-4xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-purple-200 to-pink-200">
-            Ready to Transform Your Audio?
+            Ready for Professional Audio?
           </h2>
           <p className="text-lg text-purple-200 mb-8">
-            Experience the future of audio production with our AI-powered mixing
-            platform. Start creating professional-quality mixes today with just
-            a few clicks.
+            Join the future of audio production with our AI-powered platform.
+            Create broadcast-ready, professionally mixed audio with just a few
+            clicks.
           </p>
           <Link
             to="/register"
