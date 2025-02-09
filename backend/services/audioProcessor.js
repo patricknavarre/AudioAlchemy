@@ -3,6 +3,13 @@ const path = require("path");
 const fs = require("fs").promises;
 const fsSync = require("fs");
 
+// Define upload directories
+const UPLOAD_DIR =
+  process.env.NODE_ENV === "production"
+    ? path.join("/var/data/audioalchemy")
+    : path.join(__dirname, "../uploads");
+const MIXED_DIR = path.join(UPLOAD_DIR, "mixed");
+
 class AudioProcessor {
   constructor() {
     this.checkFFmpeg();
@@ -73,10 +80,123 @@ class AudioProcessor {
     }
   }
 
-  async mixAudioFiles(files, outputPath) {
+  async measureLoudness(filePath) {
+    return new Promise((resolve, reject) => {
+      let stderr = "";
+
+      // Convert relative path to absolute path if needed
+      const absolutePath = path.isAbsolute(filePath)
+        ? filePath
+        : path.join(UPLOAD_DIR, filePath);
+
+      // Check if file exists before proceeding
+      if (!fsSync.existsSync(absolutePath)) {
+        console.error("File not found:", {
+          requestedPath: filePath,
+          absolutePath: absolutePath,
+        });
+        return reject(new Error(`File not found: ${absolutePath}`));
+      }
+
+      console.log("Measuring loudness for file:", {
+        requestedPath: filePath,
+        absolutePath: absolutePath,
+        exists: fsSync.existsSync(absolutePath),
+      });
+
+      const command = ffmpeg(absolutePath)
+        .audioFilters("ebur128=peak=true:framelog=verbose")
+        .outputOptions(["-f", "null"])
+        .on("error", (err) => {
+          console.error("FFmpeg loudness measurement error:", {
+            error: err.message,
+            filePath: absolutePath,
+          });
+          reject(err);
+        })
+        .on("stderr", (stderrLine) => {
+          stderr += stderrLine + "\n";
+        })
+        .on("end", () => {
+          try {
+            console.log("FFmpeg stderr output:", stderr);
+            const measurements = {
+              integratedLoudness: null,
+              loudnessRange: null,
+              truePeakMax: null,
+            };
+
+            // Parse the EBU R128 output
+            const lines = stderr.split("\n");
+            for (const line of lines) {
+              if (line.includes("I:")) {
+                measurements.integratedLoudness = parseFloat(
+                  line.split("I:")[1]
+                );
+              } else if (line.includes("LRA:")) {
+                measurements.loudnessRange = parseFloat(line.split("LRA:")[1]);
+              } else if (line.includes("Peak:")) {
+                measurements.truePeakMax = parseFloat(line.split("Peak:")[1]);
+              }
+            }
+
+            console.log("Parsed measurements:", measurements);
+            resolve(measurements);
+          } catch (error) {
+            console.error("Error parsing loudness measurements:", error);
+            reject(error);
+          }
+        });
+
+      command.output("/dev/null").run();
+    });
+  }
+
+  async normalizeLoudness(inputPath, outputPath, targetLUFS = -23) {
+    try {
+      // First measure current loudness
+      const measurements = await this.measureLoudness(inputPath);
+
+      // Calculate required gain adjustment
+      const gainAdjustment = targetLUFS - measurements.integratedLoudness;
+
+      // Apply loudness normalization
+      return new Promise((resolve, reject) => {
+        const command = ffmpeg(inputPath)
+          .audioFilters([
+            // Apply gain adjustment
+            `volume=${gainAdjustment}dB`,
+            // Ensure true peaks don't exceed -1 dBTP
+            "acompressor=threshold=-1:ratio=20:attack=5:release=50",
+          ])
+          .toFormat("wav")
+          .audioCodec("pcm_s24le")
+          .audioFrequency(48000)
+          .on("error", (err) => {
+            console.error("FFmpeg normalization error:", err);
+            reject(err);
+          })
+          .on("end", () => {
+            resolve({
+              normalizedPath: outputPath,
+              originalLoudness: measurements.integratedLoudness,
+              adjustedBy: gainAdjustment,
+              targetLUFS,
+            });
+          })
+          .save(outputPath);
+      });
+    } catch (error) {
+      console.error("Loudness normalization error:", error);
+      throw error;
+    }
+  }
+
+  async mixAudioFiles(files, outputPath, gainAdjustment = 0) {
     return new Promise((resolve, reject) => {
       try {
         console.log("Starting mix with files:", files);
+        console.log("Applying gain adjustment:", gainAdjustment, "dB");
 
         if (!files || files.length === 0) {
           throw new Error("No files to mix");
@@ -93,7 +213,6 @@ class AudioProcessor {
         });
 
         // Create complex filter for mixing with volume adjustments
-        const filterInputs = files.map((_, index) => `[${index}:a]`).join("");
         const volumeFilters = files
           .map((file, index) => {
             const volume = file.volume || 1;
@@ -101,14 +220,32 @@ class AudioProcessor {
           })
           .join(";");
         const volumeInputs = files.map((_, index) => `[v${index}]`).join("");
-        const complexFilter = `${volumeFilters};${volumeInputs}amix=inputs=${files.length}:duration=longest:dropout_transition=0[aout]`;
+
+        // Build the complex filter chain:
+        // 1. Apply individual track volumes
+        // 2. Mix all tracks
+        // 3. Apply loudness normalization
+        // 4. Apply gain adjustment
+        let complexFilter = `${volumeFilters};`;
+        complexFilter += `${volumeInputs}amix=inputs=${files.length}:duration=longest:dropout_transition=0[mixed];`;
+        complexFilter += `[mixed]loudnorm=I=-23:TP=-1:LRA=11[normalized];`;
+
+        // Apply gain adjustment after normalization
+        if (gainAdjustment !== 0) {
+          complexFilter += `[normalized]volume=${gainAdjustment}dB[aout]`;
+        } else {
+          // If no gain adjustment needed, just use a copy filter
+          complexFilter += `[normalized]acopy[aout]`;
+        }
+
+        console.log("Complex filter:", complexFilter);
 
         command
           .complexFilter(complexFilter)
           .outputOptions(["-map", "[aout]"])
           .audioChannels(2)
-          .audioFrequency(48000) // Professional sample rate
-          .audioCodec("pcm_s24le") // 24-bit audio
+          .audioFrequency(48000)
+          .audioCodec("pcm_s24le")
           .toFormat("wav");
 
         command
@@ -120,7 +257,10 @@ class AudioProcessor {
             reject(err);
           })
           .on("end", () => {
-            console.log("Mix completed successfully:", outputPath);
+            console.log("Mix completed successfully:", {
+              outputPath,
+              gainAdjustment,
+            });
             resolve(outputPath);
           });
 

@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import WaveformPlayer from "../audio/WaveformPlayer";
 import { toast } from "react-hot-toast";
 import { FiVolume2, FiRefreshCw } from "react-icons/fi";
+import { debounce } from "lodash";
 
 // Utility function to get filename from path
 const getFilename = (filepath) => {
@@ -26,6 +27,10 @@ export default function ProjectView() {
   const [expandedFile, setExpandedFile] = useState(null);
   const [stemVolumes, setStemVolumes] = useState({});
   const [isRemixing, setIsRemixing] = useState(false);
+  const [targetLUFS, setTargetLUFS] = useState(-23);
+  const [loudnessMeasurements, setLoudnessMeasurements] = useState(null);
+  const [gainAdjustment, setGainAdjustment] = useState(0);
+  const [isCheckingLoudness, setIsCheckingLoudness] = useState(false);
 
   // Single useEffect to handle project fetching and URL initialization
   useEffect(() => {
@@ -90,6 +95,30 @@ export default function ProjectView() {
       initializeProject();
     }
   }, [id, navigate]);
+
+  useEffect(() => {
+    const measureLoudness = async () => {
+      if (project?.mixedFile?.path) {
+        try {
+          const response = await axios.get(
+            `${import.meta.env.VITE_API_URL}/api/projects/${
+              project._id
+            }/loudness`,
+            {
+              headers: {
+                Authorization: `Bearer ${localStorage.getItem("token")}`,
+              },
+            }
+          );
+          setLoudnessMeasurements(response.data);
+        } catch (error) {
+          console.error("Error measuring loudness:", error);
+        }
+      }
+    };
+
+    measureLoudness();
+  }, [project?.mixedFile?.path]);
 
   const handleMix = async () => {
     try {
@@ -210,6 +239,26 @@ export default function ProjectView() {
     }));
   };
 
+  const handleCheckLoudness = async () => {
+    setIsCheckingLoudness(true);
+    try {
+      const response = await axios.get(
+        `${import.meta.env.VITE_API_URL}/api/projects/${project._id}/loudness`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+      setLoudnessMeasurements(response.data);
+    } catch (error) {
+      console.error("Error measuring loudness:", error);
+      toast.error("Failed to measure loudness");
+    } finally {
+      setIsCheckingLoudness(false);
+    }
+  };
+
   const handleRemix = async () => {
     try {
       setIsRemixing(true);
@@ -217,7 +266,10 @@ export default function ProjectView() {
 
       const response = await axios.post(
         `${import.meta.env.VITE_API_URL}/api/projects/${id}/remix`,
-        { stemVolumes },
+        {
+          stemVolumes,
+          gainAdjustment: parseFloat(gainAdjustment),
+        },
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token")}`,
@@ -264,6 +316,48 @@ export default function ProjectView() {
       toast.error("Failed to update mix");
     } finally {
       setIsRemixing(false);
+    }
+  };
+
+  const handleTargetLUFSChange = async (newTarget) => {
+    setTargetLUFS(newTarget);
+    try {
+      setMixing(true);
+      await axios.post(
+        `${import.meta.env.VITE_API_URL}/api/projects/${project._id}/normalize`,
+        { targetLUFS: newTarget },
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+      // Fetch the updated project to get the new mix
+      const updatedProjectResponse = await axios.get(
+        `${import.meta.env.VITE_API_URL}/api/projects/${project._id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+      setProject(updatedProjectResponse.data);
+
+      // Update audio URLs
+      if (updatedProjectResponse.data.mixedFile?.path) {
+        const fileName = getFilename(
+          updatedProjectResponse.data.mixedFile.path
+        );
+        setAudioUrl(
+          `${import.meta.env.VITE_API_URL}/api/projects/mixed/${fileName}`
+        );
+      }
+      toast.success("Mix normalized successfully");
+    } catch (error) {
+      console.error("Error normalizing loudness:", error);
+      toast.error("Failed to normalize mix");
+    } finally {
+      setMixing(false);
     }
   };
 
@@ -502,6 +596,78 @@ export default function ProjectView() {
     );
   };
 
+  const LoudnessMeter = ({ measurements, onCheckLoudness }) => {
+    const handleGainChange = (e) => {
+      const value = parseFloat(e.target.value);
+      setGainAdjustment(value);
+    };
+
+    return (
+      <div className="p-4 rounded-xl backdrop-blur-sm bg-white/5 border border-white/10 mb-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-medium text-white">Loudness Control</h3>
+          <button
+            onClick={onCheckLoudness}
+            disabled={isCheckingLoudness}
+            className="px-4 py-2 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 transition-colors"
+          >
+            {isCheckingLoudness ? "Checking..." : "Check Loudness"}
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {measurements && (
+            <div className="grid grid-cols-1 gap-3 mb-4">
+              <div className="flex justify-between text-sm">
+                <span className="text-purple-200/70">Integrated Loudness:</span>
+                <span className="text-purple-200 font-medium">
+                  {measurements.integratedLoudness?.toFixed(1)} LUFS
+                </span>
+              </div>
+              {measurements.loudnessRange && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-purple-200/70">Loudness Range:</span>
+                  <span className="text-purple-200 font-medium">
+                    {measurements.loudnessRange.toFixed(1)} LU
+                  </span>
+                </div>
+              )}
+              {measurements.truePeakMax && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-purple-200/70">True Peak Maximum:</span>
+                  <span className="text-purple-200 font-medium">
+                    {measurements.truePeakMax.toFixed(1)} dBTP
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-purple-200">Gain Adjustment:</span>
+              <span className="text-purple-200">
+                {gainAdjustment > 0 ? "+" : ""}
+                {gainAdjustment} dB
+              </span>
+            </div>
+            <input
+              type="range"
+              min="-12"
+              max="12"
+              step="0.1"
+              value={gainAdjustment}
+              onChange={handleGainChange}
+              className="w-full h-2 bg-purple-200/20 rounded-lg appearance-none cursor-pointer hover:bg-purple-200/30 transition-all duration-200
+                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-400 [&::-webkit-slider-thumb]:hover:bg-purple-300 [&::-webkit-slider-thumb]:cursor-grab [&::-webkit-slider-thumb]:active:cursor-grabbing [&::-webkit-slider-thumb]:transition-all [&::-webkit-slider-thumb]:duration-200 [&::-webkit-slider-thumb]:hover:scale-110 [&::-webkit-slider-thumb]:shadow-md
+                [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-purple-400 [&::-moz-range-thumb]:hover:bg-purple-300 [&::-moz-range-thumb]:cursor-grab [&::-moz-range-thumb]:active:cursor-grabbing [&::-moz-range-thumb]:transition-all [&::-moz-range-thumb]:duration-200 [&::-moz-range-thumb]:hover:scale-110 [&::-moz-range-thumb]:shadow-md [&::-moz-range-thumb]:border-0"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 px-4 py-8">
       {loading ? (
@@ -636,6 +802,12 @@ export default function ProjectView() {
                     <div className="p-6 rounded-xl backdrop-blur-sm bg-white/5 border border-white/10 mb-4">
                       <WaveformPlayer audioUrl={audioUrl} height={120} />
                     </div>
+
+                    <LoudnessMeter
+                      measurements={loudnessMeasurements}
+                      onCheckLoudness={handleCheckLoudness}
+                    />
+
                     <div className="flex gap-4">
                       <button
                         onClick={handleRemix}

@@ -1,7 +1,57 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
-import axios from 'axios';
-import WaveSurfer from 'wavesurfer.js';
+import React, { useState, useEffect, useRef } from "react";
+import { useParams } from "react-router-dom";
+import axios from "axios";
+import WaveSurfer from "wavesurfer.js";
+
+const LoudnessMeter = ({ measurements, targetLUFS, onTargetChange }) => {
+  return (
+    <div className="p-4 rounded-xl backdrop-blur-sm bg-white/5 border border-white/10">
+      <h3 className="font-medium text-white mb-2">Loudness Control</h3>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <span className="text-purple-200">Target LUFS:</span>
+          <div className="flex items-center gap-2">
+            <input
+              type="range"
+              min="-23"
+              max="-14"
+              step="0.5"
+              value={targetLUFS}
+              onChange={(e) => onTargetChange(parseFloat(e.target.value))}
+              className="w-32"
+            />
+            <span className="text-purple-200 min-w-[4rem]">
+              {targetLUFS} LUFS
+            </span>
+          </div>
+        </div>
+
+        {measurements && (
+          <>
+            <div className="flex justify-between text-sm">
+              <span className="text-purple-200/70">Current Loudness:</span>
+              <span className="text-purple-200">
+                {measurements.integratedLoudness?.toFixed(1)} LUFS
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-purple-200/70">Loudness Range:</span>
+              <span className="text-purple-200">
+                {measurements.loudnessRange?.toFixed(1)} LU
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-purple-200/70">True Peak Max:</span>
+              <span className="text-purple-200">
+                {measurements.truePeakMax?.toFixed(1)} dBTP
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export default function ProjectMixer() {
   const { id } = useParams();
@@ -17,6 +67,8 @@ export default function ProjectMixer() {
   const audioContext = useRef(null);
   const gainNodes = useRef({});
   const panNodes = useRef({});
+  const [targetLUFS, setTargetLUFS] = useState(-23);
+  const [loudnessMeasurements, setLoudnessMeasurements] = useState(null);
 
   useEffect(() => {
     fetchProject();
@@ -24,8 +76,9 @@ export default function ProjectMixer() {
 
   useEffect(() => {
     // Initialize Web Audio API
-    audioContext.current = new (window.AudioContext || window.webkitAudioContext)();
-    
+    audioContext.current = new (window.AudioContext ||
+      window.webkitAudioContext)();
+
     return () => {
       if (audioContext.current) {
         audioContext.current.close();
@@ -35,106 +88,104 @@ export default function ProjectMixer() {
 
   const fetchProject = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const response = await axios.get(
         `${import.meta.env.VITE_API_URL}/projects/${id}`,
         {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}` },
         }
       );
       setProject(response.data);
       setMixSettings(response.data.mixSettings);
       initializeWaveforms(response.data);
     } catch (err) {
-      setError(err.response?.data?.message || 'Error loading project');
+      setError(err.response?.data?.message || "Error loading project");
     } finally {
       setLoading(false);
     }
   };
 
   const initializeWaveforms = (project) => {
-    project.audioFiles.forEach(file => {
+    project.audioFiles.forEach((file) => {
       const wavesurfer = WaveSurfer.create({
         container: `#waveform-${file._id}`,
-        waveColor: '#4a5568',
-        progressColor: '#2b6cb0',
+        waveColor: "#4a5568",
+        progressColor: "#2b6cb0",
         height: 80,
         normalize: true,
         splitChannels: false,
-        interact: false
+        interact: false,
       });
 
-      wavesurfer.load(`${import.meta.env.VITE_API_URL}/uploads/${file.fileName}`);
+      wavesurfer.load(
+        `${import.meta.env.VITE_API_URL}/uploads/${file.fileName}`
+      );
       waveformRefs.current[file._id] = wavesurfer;
     });
   };
 
   const handleVolumeChange = (trackId, value) => {
-    setMixSettings(prev => ({
+    setMixSettings((prev) => ({
       ...prev,
-      tracks: prev.tracks.map(track => 
-        track.audioFileId === trackId 
+      tracks: prev.tracks.map((track) =>
+        track.audioFileId === trackId
           ? { ...track, volume: parseFloat(value) }
           : track
-      )
+      ),
     }));
   };
 
   const handlePanChange = (trackId, value) => {
-    setMixSettings(prev => ({
+    setMixSettings((prev) => ({
       ...prev,
-      tracks: prev.tracks.map(track => 
-        track.audioFileId === trackId 
+      tracks: prev.tracks.map((track) =>
+        track.audioFileId === trackId
           ? { ...track, pan: parseFloat(value) }
           : track
-      )
+      ),
     }));
   };
 
   const toggleMute = (trackId) => {
-    setMixSettings(prev => ({
+    setMixSettings((prev) => ({
       ...prev,
-      tracks: prev.tracks.map(track => 
-        track.audioFileId === trackId 
-          ? { ...track, mute: !track.mute }
-          : track
-      )
+      tracks: prev.tracks.map((track) =>
+        track.audioFileId === trackId ? { ...track, mute: !track.mute } : track
+      ),
     }));
   };
 
   const toggleSolo = (trackId) => {
-    setMixSettings(prev => ({
+    setMixSettings((prev) => ({
       ...prev,
-      tracks: prev.tracks.map(track => 
-        track.audioFileId === trackId 
-          ? { ...track, solo: !track.solo }
-          : track
-      )
+      tracks: prev.tracks.map((track) =>
+        track.audioFileId === trackId ? { ...track, solo: !track.solo } : track
+      ),
     }));
   };
 
   const saveMixSettings = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       await axios.put(
         `${import.meta.env.VITE_API_URL}/projects/${id}/mix`,
         { mixSettings },
         {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}` },
         }
       );
     } catch (err) {
-      setError('Failed to save mix settings');
+      setError("Failed to save mix settings");
     }
   };
 
   const initializeAudioNodes = (file) => {
     const gainNode = audioContext.current.createGain();
     const panNode = audioContext.current.createStereoPanner();
-    
+
     gainNode.connect(panNode);
     panNode.connect(audioContext.current.destination);
-    
+
     gainNodes.current[file._id] = gainNode;
     panNodes.current[file._id] = panNode;
   };
@@ -148,7 +199,7 @@ export default function ProjectMixer() {
         audioContext.current.currentTime
       );
     }
-    
+
     if (panNodes.current[trackId]) {
       panNodes.current[trackId].pan.setValueAtTime(
         settings.pan,
@@ -159,11 +210,11 @@ export default function ProjectMixer() {
 
   const handlePlayPause = () => {
     if (isPlaying) {
-      Object.values(waveformRefs.current).forEach(wavesurfer => {
+      Object.values(waveformRefs.current).forEach((wavesurfer) => {
         wavesurfer.pause();
       });
     } else {
-      Object.values(waveformRefs.current).forEach(wavesurfer => {
+      Object.values(waveformRefs.current).forEach((wavesurfer) => {
         wavesurfer.play();
       });
     }
@@ -178,18 +229,63 @@ export default function ProjectMixer() {
         {},
         {
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
         }
       );
 
       // Start download
-      window.location.href = `${import.meta.env.VITE_API_URL}/projects/${id}/download`;
+      window.location.href = `${
+        import.meta.env.VITE_API_URL
+      }/projects/${id}/download`;
     } catch (error) {
-      console.error('Render error:', error);
-      setError('Failed to render mix');
+      console.error("Render error:", error);
+      setError("Failed to render mix");
     } finally {
       setIsRendering(false);
+    }
+  };
+
+  useEffect(() => {
+    const measureLoudness = async () => {
+      if (project?.mixedFile?.path) {
+        try {
+          const response = await axios.get(
+            `${import.meta.env.VITE_API_URL}/api/projects/${
+              project._id
+            }/loudness`,
+            {
+              headers: {
+                Authorization: `Bearer ${localStorage.getItem("token")}`,
+              },
+            }
+          );
+          setLoudnessMeasurements(response.data);
+        } catch (error) {
+          console.error("Error measuring loudness:", error);
+        }
+      }
+    };
+
+    measureLoudness();
+  }, [project?.mixedFile?.path]);
+
+  const handleTargetLUFSChange = async (newTarget) => {
+    setTargetLUFS(newTarget);
+    try {
+      await axios.post(
+        `${import.meta.env.VITE_API_URL}/api/projects/${project._id}/normalize`,
+        { targetLUFS: newTarget },
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+      // Refresh the project to get the updated mix
+      fetchProject();
+    } catch (error) {
+      console.error("Error normalizing loudness:", error);
     }
   };
 
@@ -208,14 +304,16 @@ export default function ProjectMixer() {
         {project.audioFiles.map((file, index) => (
           <div key={file._id} className="bg-white p-4 rounded-lg shadow">
             <div className="flex items-center justify-between mb-2">
-              <span className="font-medium">{file.trackName || `Track ${index + 1}`}</span>
+              <span className="font-medium">
+                {file.trackName || `Track ${index + 1}`}
+              </span>
               <div className="space-x-2">
                 <button
                   onClick={() => toggleMute(file._id)}
                   className={`px-2 py-1 rounded ${
-                    mixSettings.tracks[index].mute 
-                      ? 'bg-red-500 text-white' 
-                      : 'bg-gray-200'
+                    mixSettings.tracks[index].mute
+                      ? "bg-red-500 text-white"
+                      : "bg-gray-200"
                   }`}
                 >
                   M
@@ -223,9 +321,9 @@ export default function ProjectMixer() {
                 <button
                   onClick={() => toggleSolo(file._id)}
                   className={`px-2 py-1 rounded ${
-                    mixSettings.tracks[index].solo 
-                      ? 'bg-yellow-500 text-white' 
-                      : 'bg-gray-200'
+                    mixSettings.tracks[index].solo
+                      ? "bg-yellow-500 text-white"
+                      : "bg-gray-200"
                   }`}
                 >
                   S
@@ -274,6 +372,12 @@ export default function ProjectMixer() {
         </button>
       </div>
 
+      <LoudnessMeter
+        measurements={loudnessMeasurements}
+        targetLUFS={targetLUFS}
+        onTargetChange={handleTargetLUFSChange}
+      />
+
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -281,24 +385,22 @@ export default function ProjectMixer() {
               onClick={handlePlayPause}
               className="bg-blue-500 text-white px-4 py-2 rounded"
             >
-              {isPlaying ? 'Pause' : 'Play'}
+              {isPlaying ? "Pause" : "Play"}
             </button>
             <span>{formatTime(currentTime)}</span>
           </div>
-          
+
           <button
             onClick={handleRender}
             disabled={isRendering}
             className={`px-4 py-2 rounded ${
-              isRendering 
-                ? 'bg-gray-400' 
-                : 'bg-green-500 hover:bg-green-600'
+              isRendering ? "bg-gray-400" : "bg-green-500 hover:bg-green-600"
             } text-white`}
           >
-            {isRendering ? 'Rendering...' : 'Render Mix'}
+            {isRendering ? "Rendering..." : "Render Mix"}
           </button>
         </div>
       </div>
     </div>
   );
-} 
+}

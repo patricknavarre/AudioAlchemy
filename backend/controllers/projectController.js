@@ -887,7 +887,7 @@ exports.remixProject = async (req, res) => {
       return res.status(400).json({ message: "No files to mix" });
     }
 
-    const { stemVolumes } = req.body;
+    const { stemVolumes, gainAdjustment = 0 } = req.body;
     if (!stemVolumes) {
       return res
         .status(400)
@@ -914,6 +914,7 @@ exports.remixProject = async (req, res) => {
       mixFileName,
       mixPath,
       fileCount: project.files.length,
+      gainAdjustment,
       files: filesWithAbsolutePaths.map((f) => ({
         path: f.processedPath,
         volume: f.volume,
@@ -922,7 +923,11 @@ exports.remixProject = async (req, res) => {
     });
 
     // Create the mix with volume adjustments
-    await audioProcessor.mixAudioFiles(filesWithAbsolutePaths, mixPath);
+    await audioProcessor.mixAudioFiles(
+      filesWithAbsolutePaths,
+      mixPath,
+      gainAdjustment
+    );
 
     // Store relative path in database
     project.mixedFile = {

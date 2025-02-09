@@ -5,6 +5,8 @@ const projectController = require("../controllers/projectController");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs").promises;
+const audioProcessor = require("../services/audioProcessor");
+const Project = require("../models/Project");
 
 // Import the UPLOAD_DIR and other constants
 const UPLOAD_DIR =
@@ -231,6 +233,49 @@ router.get("/mixed/:filename", auth, async (req, res) => {
     requestedPath: filePath,
   });
   await serveFile(filePath, res);
+});
+
+// Loudness measurement route
+router.get("/:id/loudness", auth, async (req, res) => {
+  try {
+    const project = await Project.findOne({
+      _id: req.params.id,
+      user: req.userId,
+    });
+
+    if (!project || !project.mixedFile) {
+      return res.status(404).json({ message: "Mix not found" });
+    }
+
+    // Get absolute path for the mixed file
+    const mixedFilePath = path.join(
+      MIXED_DIR,
+      path.basename(project.mixedFile.path)
+    );
+
+    console.log("Measuring loudness for file:", {
+      projectId: project._id,
+      mixedFilePath: mixedFilePath,
+      exists: await fs
+        .access(mixedFilePath)
+        .then(() => true)
+        .catch(() => false),
+    });
+
+    const measurements = await audioProcessor.measureLoudness(mixedFilePath);
+
+    console.log("Loudness measurements:", measurements);
+    res.json(measurements);
+  } catch (error) {
+    console.error("Error measuring loudness:", {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      message: "Error measuring loudness",
+      error: error.message,
+    });
+  }
 });
 
 // Error handling middleware
