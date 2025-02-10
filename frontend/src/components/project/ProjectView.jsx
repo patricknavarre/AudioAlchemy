@@ -3,7 +3,7 @@ import { useParams, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import WaveformPlayer from "../audio/WaveformPlayer";
 import { toast } from "react-hot-toast";
-import { FiVolume2, FiRefreshCw } from "react-icons/fi";
+import { FiVolume2, FiRefreshCw, FiDownload } from "react-icons/fi";
 import { debounce } from "lodash";
 
 // Utility function to get filename from path
@@ -358,6 +358,46 @@ export default function ProjectView() {
       toast.error("Failed to normalize mix");
     } finally {
       setMixing(false);
+    }
+  };
+
+  const handleStemDownload = async (file) => {
+    try {
+      if (!file.processedPath) {
+        throw new Error("No processed file available");
+      }
+
+      const fileName = getFilename(file.processedPath);
+      console.log("Downloading stem:", {
+        fileName,
+        url: `${
+          import.meta.env.VITE_API_URL
+        }/api/projects/processed/${fileName}`,
+      });
+
+      const response = await axios.get(
+        `${import.meta.env.VITE_API_URL}/api/projects/processed/${fileName}`,
+        {
+          responseType: "blob",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      toast.success(`Downloaded ${file.stemType} stem`);
+    } catch (err) {
+      console.error("Stem download error:", err);
+      toast.error("Failed to download stem");
     }
   };
 
@@ -755,16 +795,27 @@ export default function ProjectView() {
                   >
                     <div className="flex items-center justify-between mb-3">
                       <p className="font-medium text-white">{file.stemType}</p>
-                      <button
-                        onClick={() =>
-                          setExpandedFile(expandedFile === index ? null : index)
-                        }
-                        className="text-purple-200 hover:text-white transition-colors"
-                      >
-                        {expandedFile === index
-                          ? "Hide Details"
-                          : "Show Details"}
-                      </button>
+                      <div className="flex items-center space-x-3">
+                        <button
+                          onClick={() => handleStemDownload(file)}
+                          className="px-3 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 text-sm transition-colors flex items-center space-x-2"
+                        >
+                          <FiDownload className="w-4 h-4" />
+                          <span>Download Stem</span>
+                        </button>
+                        <button
+                          onClick={() =>
+                            setExpandedFile(
+                              expandedFile === index ? null : index
+                            )
+                          }
+                          className="text-purple-200 hover:text-white transition-colors"
+                        >
+                          {expandedFile === index
+                            ? "Hide Details"
+                            : "Show Details"}
+                        </button>
+                      </div>
                     </div>
                     <WaveformPlayer audioUrl={file.audioUrl} height={80} />
                     <div className="mt-4 flex items-center space-x-4">
