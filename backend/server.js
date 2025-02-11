@@ -6,8 +6,13 @@ const path = require("path");
 const fs = require("fs");
 const auth = require("./middleware/auth");
 
-// Import models
-require("./models/User");
+// Import models - only if they haven't been registered
+const models = {};
+try {
+  models.User = mongoose.model("User");
+} catch (e) {
+  models.User = require("./models/user");
+}
 
 // Define upload directories first
 const UPLOAD_DIR =
@@ -149,8 +154,12 @@ app.use(express.json({ limit: "500mb" }));
 app.use(express.urlencoded({ extended: true, limit: "500mb" }));
 
 // Routes
-app.use("/api/auth", require("./routes/auth"));
-app.use("/api/projects", require("./routes/projects"));
+const projectRoutes = require("./routes/projects");
+const authRoutes = require("./routes/auth");
+const stemRoutes = require("./routes/stems");
+app.use("/api/auth", authRoutes);
+app.use("/api/projects", projectRoutes);
+app.use("/api/stems", stemRoutes);
 app.use("/api/templates", require("./routes/templates"));
 
 // Serve static files

@@ -16,6 +16,7 @@ import Register from "./components/auth/Register";
 import ProjectView from "./components/project/ProjectView";
 import HomePage from "./components/pages/HomePage";
 import { Toaster } from "react-hot-toast";
+import StemSeparator from "./components/audio/StemSeparator";
 
 // Protected Route Component
 function ProtectedRoute({ children }) {
@@ -77,6 +78,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ProjectView />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/stems"
+              element={
+                <ProtectedRoute>
+                  <StemSeparator />
                 </ProtectedRoute>
               }
             />
