@@ -20,7 +20,7 @@ const models = {};
 try {
   models.User = mongoose.model("User");
 } catch (e) {
-  models.User = require("./models/user");
+  models.User = require("./models/User");
 }
 
 // Define upload directories first

@@ -1,6 +1,6 @@
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const Subscription = require("../models/subscription");
-const User = require("../models/user");
+const User = require("../models/User");
 
 const SUBSCRIPTION_PLANS = {
   PRO: {
