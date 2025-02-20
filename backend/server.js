@@ -1,3 +1,12 @@
+/**
+ * @copyright Copyright (c) 2024 AudioAlchemist. All rights reserved.
+ * @file server.js - Main server application implementing AudioAlchemist's core backend functionality
+ *
+ * This file contains proprietary and confidential code implementing AudioAlchemist's
+ * unique audio processing pipeline and project management system. Unauthorized copying,
+ * modification, distribution, or use is strictly prohibited.
+ */
+
 require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");

@@ -1,8 +1,8 @@
 /**
- * @copyright Copyright (c) 2024 Audio Alchemy. All rights reserved.
+ * @copyright Copyright (c) 2024 AudioAlchemist. All rights reserved.
  * @file App.jsx - Main application component implementing the core routing and layout structure
  *
- * This file contains proprietary and confidential code implementing Audio Alchemy's
+ * This file contains proprietary and confidential code implementing AudioAlchemist's
  * unique user interface and application flow. Unauthorized copying, modification,
  * distribution, or use is strictly prohibited.
  */
