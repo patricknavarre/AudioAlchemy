@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { useCart } from "../../context/CartContext.jsx";
+import { useCart } from "../../context/CartContext";
 import {
   FiHome,
   FiMusic,
@@ -20,7 +20,9 @@ export default function Navigation() {
     navigate("/login");
   };
 
-  const cartItemCount = cart.reduce((total, item) => total + item.quantity, 0);
+  // Safely calculate cart item count
+  const cartItemCount =
+    cart?.reduce((total, item) => total + (item?.quantity || 0), 0) || 0;
 
   return (
     <nav className="bg-white/10 backdrop-blur-md border-b border-white/10">
