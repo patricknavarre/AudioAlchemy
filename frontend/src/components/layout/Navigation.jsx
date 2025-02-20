@@ -1,16 +1,26 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { FiHome, FiMusic, FiLogOut, FiUser } from "react-icons/fi";
+import { useCart } from "../../context/CartContext";
+import {
+  FiHome,
+  FiMusic,
+  FiLogOut,
+  FiUser,
+  FiShoppingCart,
+} from "react-icons/fi";
 
 export default function Navigation() {
   const { user, logout } = useAuth();
+  const { cart } = useCart();
   const navigate = useNavigate();
 
   const handleLogout = () => {
     logout();
     navigate("/login");
   };
+
+  const cartItemCount = cart.reduce((total, item) => total + item.quantity, 0);
 
   return (
     <nav className="bg-white/10 backdrop-blur-md border-b border-white/10">
@@ -43,6 +53,19 @@ export default function Navigation() {
                 >
                   <FiMusic className="h-4 w-4" />
                   <span>Projects</span>
+                </Link>
+
+                <Link
+                  to="/cart"
+                  className="text-purple-200 hover:text-white px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-2 relative"
+                >
+                  <FiShoppingCart className="h-4 w-4" />
+                  <span>Shopping Cart</span>
+                  {cartItemCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                      {cartItemCount}
+                    </span>
+                  )}
                 </Link>
 
                 <button
