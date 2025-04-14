@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: audioalchemy
+    env: node
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+    disk:
+      name: audioalchemy-data
+      mountPath: /var/data
+      sizeGB: 1

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Upload</title>
+</head>
+<body>
+    <h2>Test OMF/AAF Upload</h2>
+    <form action="http://localhost:3500/api/projects/test-upload" method="post" enctype="multipart/form-data">
+        <div>
+            <label>Project Name:</label>
+            <input type="text" name="name" required>
+        </div>
+        <div>
+            <label>File:</label>
+            <input type="file" name="sourceFile" accept=".wav,.mp3,.aif,.aiff" required>
+        </div>
+        <button type="submit">Upload</button>
+    </form>
+</body>
+</html> 

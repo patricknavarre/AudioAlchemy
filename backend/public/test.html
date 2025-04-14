@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Upload</title>
+    <style>
+        .error { color: red; }
+        .success { color: green; }
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .status { margin: 20px 0; padding: 10px; background: #f0f0f0; }
+        .audio-player { margin-top: 20px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Audio/OMF/AAF Upload Test</h2>
+        <p class="text-sm text-gray-600 mb-4">
+            Supported formats: OMF, AAF, WAV, MP3, AIF, AIFF
+        </p>
+        <div id="message"></div>
+        <form id="uploadForm">
+            <div>
+                <label>Project Name:</label>
+                <input type="text" name="name" required>
+            </div>
+            <div>
+                <label>File:</label>
+                <input type="file" name="sourceFile" accept=".omf,.aaf,.wav,.mp3,.aif,.aiff" required>
+            </div>
+            <button type="submit">Upload</button>
+        </form>
+
+        <div id="status" class="status hidden">
+            <h3>Project Status</h3>
+            <p>Status: <span id="projectStatus">-</span></p>
+            <p>Details: <span id="statusDetails"></span></p>
+            <div id="audioPlayer" class="audio-player hidden">
+                <h4>Preview:</h4>
+                <audio controls>
+                    Your browser does not support the audio element.
+                </audio>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let projectId = null;
+        let statusCheckInterval = null;
+
+        async function checkProjectStatus() {
+            try {
+                const response = await fetch(`/api/projects/test/${projectId}`);
+                const project = await response.json();
+                
+                console.log('Project status:', project);
+                document.getElementById('projectStatus').textContent = project.status;
+                document.getElementById('statusDetails').textContent = 
+                    project.error ? `Error: ${project.error.message}` : 
+                    project.audioFiles?.length ? `Processed ${project.audioFiles.length} tracks` : 
+                    'Processing...';
+
+                if (project.status === 'completed' && project.audioFiles?.length > 0) {
+                    clearInterval(statusCheckInterval);
+                    
+                    // Show audio player with the processed file
+                    const audioPlayer = document.getElementById('audioPlayer');
+                    audioPlayer.classList.remove('hidden');
+                    const audio = audioPlayer.querySelector('audio');
+                    audio.src = `/${project.audioFiles[0].path}`;
+                    console.log('Setting audio source:', audio.src);
+                    
+                    // Add error handling for audio loading
+                    audio.onerror = (e) => {
+                        console.error('Audio loading error:', e);
+                        document.getElementById('statusDetails').textContent = 
+                            `Error loading audio: ${audio.error?.message || 'Unknown error'}`;
+                    };
+                }
+            } catch (error) {
+                console.error('Status check error:', error);
+                document.getElementById('statusDetails').textContent = 
+                    `Error: ${error.message}`;
+            }
+        }
+
+        document.getElementById('uploadForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            
+            try {
+                const response = await fetch('/api/projects/test-upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    projectId = result._id;
+                    document.getElementById('message').innerHTML = 
+                        `<div class="success">Upload successful! Project ID: ${result._id}</div>`;
+                    
+                    // Show status section
+                    document.getElementById('status').classList.remove('hidden');
+                    
+                    // Start checking status
+                    statusCheckInterval = setInterval(checkProjectStatus, 1000);
+                } else {
+                    throw new Error(result.message || 'Upload failed');
+                }
+            } catch (error) {
+                document.getElementById('message').innerHTML = 
+                    `<div class="error">Error: ${error.message}</div>`;
+            }
+        };
+    </script>
+</body>
+</html> 
