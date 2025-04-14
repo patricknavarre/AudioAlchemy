@@ -33,6 +33,8 @@ export default function ProjectView() {
   const [gainAdjustment, setGainAdjustment] = useState(0);
   const [isCheckingLoudness, setIsCheckingLoudness] = useState(false);
   const [isAdjustingTruePeak, setIsAdjustingTruePeak] = useState(false);
+  const [advancedControlsOpen, setAdvancedControlsOpen] = useState(false);
+  const [showMixCreatedHighlight, setShowMixCreatedHighlight] = useState(false);
 
   // Single useEffect to handle project fetching and URL initialization
   useEffect(() => {
@@ -181,6 +183,18 @@ export default function ProjectView() {
         setAudioUrl(
           `${import.meta.env.VITE_API_URL}/api/projects/mixed/${fileName}`
         );
+        
+        // Show highlight animation for newly created mix
+        setShowMixCreatedHighlight(true);
+        // Auto-scroll to the mix section
+        setTimeout(() => {
+          document.getElementById('final-mix-section')?.scrollIntoView({ 
+            behavior: 'smooth',
+            block: 'start'
+          });
+          // Remove highlight after 5 seconds
+          setTimeout(() => setShowMixCreatedHighlight(false), 5000);
+        }, 500);
       }
 
       if (projectData.files?.length > 0) {
@@ -202,10 +216,9 @@ export default function ProjectView() {
       }
 
       toast.success("Mix created successfully!");
-    } catch (err) {
-      console.error("Mix error:", err);
-      setError(err.response?.data?.message || "Error mixing project");
-      toast.error("Failed to create mix");
+    } catch (error) {
+      console.error("Mix error:", error);
+      toast.error(error.response?.data?.message || "Error creating mix");
     } finally {
       setMixing(false);
     }
@@ -948,6 +961,58 @@ export default function ProjectView() {
     );
   };
 
+  // Create a collapsible Advanced Controls component
+  const AdvancedControls = () => (
+    <div className="mb-4">
+      <button
+        onClick={() => setAdvancedControlsOpen(!advancedControlsOpen)}
+        className="w-full flex items-center justify-between px-4 py-3 rounded-xl backdrop-blur-sm bg-white/5 border border-white/10 text-white font-medium mb-2"
+      >
+        <span className="flex items-center">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5 mr-2 text-purple-300"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fillRule="evenodd"
+              d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
+              clipRule="evenodd"
+            />
+          </svg>
+          Advanced Audio Controls
+        </span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className={`h-5 w-5 transition-transform ${
+            advancedControlsOpen ? "transform rotate-180" : ""
+          }`}
+          viewBox="0 0 20 20"
+          fill="currentColor"
+        >
+          <path
+            fillRule="evenodd"
+            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+      
+      {advancedControlsOpen && (
+        <div className="transition-all duration-300 ease-in-out overflow-hidden">
+          <div className="space-y-4">
+            <LoudnessMeter
+              measurements={loudnessMeasurements}
+              onCheckLoudness={handleCheckLoudness}
+            />
+            <TruePeakControls />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 px-4 py-8">
       {loading ? (
@@ -1092,22 +1157,30 @@ export default function ProjectView() {
             {processingDetails && renderProcessingDetails()}
 
             {project.mixedFile ? (
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-white mb-4">
+              <div 
+                id="final-mix-section" 
+                className={`mb-6 transition-all duration-500 ${
+                  showMixCreatedHighlight 
+                    ? "bg-gradient-to-r from-purple-800/30 via-pink-600/30 to-purple-800/30 animate-pulse rounded-xl p-4"
+                    : ""
+                }`}
+              >
+                <h2 className="text-2xl font-bold text-white mb-4 flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 mr-2 text-purple-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
+                  </svg>
                   Final Mix
+                  {showMixCreatedHighlight && (
+                    <span className="ml-3 text-sm bg-gradient-to-r from-purple-500 to-pink-500 text-white px-3 py-1 rounded-full animate-bounce">
+                      New!
+                    </span>
+                  )}
                 </h2>
                 <div className="p-6 rounded-xl backdrop-blur-sm bg-white/5 border border-white/10">
                   <WaveformPlayer audioUrl={audioUrl} height={120} />
                 </div>
 
-                <LoudnessMeter
-                  measurements={loudnessMeasurements}
-                  onCheckLoudness={handleCheckLoudness}
-                />
-
-                <div className="mb-4">
-                  <TruePeakControls />
-                </div>
+                <AdvancedControls />
 
                 <div className="flex gap-4">
                   <button
