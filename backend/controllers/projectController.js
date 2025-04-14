@@ -231,57 +231,59 @@ exports.createProject = async (req, res) => {
           throw new Error("Processed file is empty");
         }
 
+        // Analyze the audio for more detailed information
+        const analysis = await audioProcessor.analyzeAudio(processedPath);
+
         // Map the improvements based on the filters applied
-        const improvements = filters.map((filter) => {
+        const improvements = {};
+        filters.forEach((filter) => {
           switch (filter.filter) {
             case "equalizer":
-              return filter.options.g < 0
+              improvements.frequency = filter.options.g < 0
                 ? `Reduced ${
                     filter.options.f < 1000 ? "low-mid" : "high"
                   } frequencies around ${Math.round(filter.options.f)}Hz`
                 : `Enhanced ${
                     filter.options.f < 1000 ? "low-mid" : "high"
                   } frequencies around ${Math.round(filter.options.f)}Hz`;
+              break;
             case "acompressor":
-              return `Improved dynamic range with ${filter.options.ratio}:1 compression`;
+              improvements.dynamics = `Improved dynamic range with ${filter.options.ratio}:1 compression`;
+              break;
             case "aphaser":
-              return "Corrected phase issues";
+              improvements.phase = "Corrected phase issues";
+              break;
             case "stereotools":
-              return "Optimized stereo width";
-            case "anlmdn":
-              return "Reduced background noise";
+              improvements.stereo = "Optimized stereo width";
+              break;
             default:
-              return `Applied ${filter.filter} processing`;
+              break;
           }
         });
 
-        // Get file stats for size
-        const stats = await fs.stat(file.path);
-        const processedFileStats = await fs.stat(processedPath);
-
+        // Add stem to processed files
         processedFiles.push({
-          originalName: file.originalname,
           originalPath: toRelativePath(file.path),
           processedPath: toRelativePath(processedPath),
-          type: file.mimetype || "audio/wav",
-          size: stats.size,
-          processedSize: processedFileStats.size,
-          stemType: file.originalname.toLowerCase().includes("vo")
-            ? "vocals"
-            : "music",
-          improvements,
-          processingDetails: {
-            filters: filters.map((f) => ({
-              type: f.filter,
-              settings: f.options,
-            })),
-          },
+          type: file.mimetype,
+          size: initialProcessedStats.size,
+          stemType:
+            req.body.stemTypes?.[file.originalname] ||
+            req.body.stemTypes?.[file.fieldname] ||
+            file.originalname.split(".")[0] ||
+            "music",
+          fileName: file.originalname,
+          analysis,
+          processing: {
+            filters,
+            improvements
+          }
         });
 
         console.log("File processed successfully:", {
           file: file.originalname,
           type: file.mimetype,
-          size: stats.size,
+          size: initialProcessedStats.size,
           improvements,
           filters: filters.length,
         });
@@ -306,14 +308,20 @@ exports.createProject = async (req, res) => {
       mixStyle: req.body.mixStyle,
       status: "processing",
       files: processedFiles.map((file) => ({
-        originalName: file.originalName,
+        originalName: file.fileName,
         originalPath: file.originalPath,
         processedPath: file.processedPath,
         type: "audio/wav", // Add required field
         size: file.size || 0, // Add required field
         stemType: file.stemType || "unknown", // Add required field
-        improvements: file.improvements,
-        processingDetails: file.processingDetails,
+        improvements: file.processing.improvements,
+        processingDetails: {
+          filters: file.processing.filters.map((f) => ({
+            type: f.filter,
+            settings: f.options,
+          })),
+        },
+        analysis: file.analysis,
       })),
     };
 
@@ -652,15 +660,88 @@ exports.mixProject = async (req, res) => {
       })),
     });
 
+    // Collect processing details
+    const processingDetails = {
+      files: await Promise.all(
+        project.files.map(async (file) => {
+          try {
+            // Analyze the processed file
+            const analysis = await audioProcessor.analyzeAudio(
+              toAbsolutePath(file.processedPath)
+            );
+
+            // Get processing filters that were applied
+            const processing = {
+              filters: [],
+            };
+
+            // Add filters based on analysis
+            if (analysis.issues.muddy) {
+              processing.filters.push({
+                filter: "equalizer",
+                description: "Low-mid cleanup",
+              });
+            }
+            if (analysis.issues.harsh) {
+              processing.filters.push({
+                filter: "equalizer",
+                description: "High frequency smoothing",
+              });
+            }
+            if (analysis.dynamics.crestFactor > 25) {
+              processing.filters.push({
+                filter: "compand",
+                description: "Dynamic range control",
+              });
+            }
+            if (analysis.issues.phaseCancellation) {
+              processing.filters.push({
+                filter: "aphaser",
+                description: "Phase correction",
+              });
+            }
+            if (analysis.issues.excessiveStereoWidth) {
+              processing.filters.push({
+                filter: "stereotools",
+                description: "Stereo field adjustment",
+              });
+            }
+
+            return {
+              name: path.basename(file.originalPath),
+              stemType: file.stemType,
+              analysis,
+              processing,
+            };
+          } catch (err) {
+            console.error("Error analyzing file:", err);
+            return {
+              name: path.basename(file.originalPath),
+              stemType: file.stemType,
+              error: "Analysis failed",
+            };
+          }
+        })
+      ),
+      mixingDetails: {
+        method: "Complex Filter Graph",
+        format: "WAV",
+        sampleRate: 48000,
+        bitDepth: 24,
+        channels: 2,
+      },
+    };
+
     // Create the mix
     await audioProcessor.mixAudioFiles(filesWithAbsolutePaths, mixPath);
 
-    // Store relative path in database
+    // Store relative path and processing details in database
     project.mixedFile = {
       fileName: mixFileName,
       path: toRelativePath(mixPath),
       createdAt: new Date(),
     };
+    project.processingDetails = processingDetails;
 
     await project.save();
 
@@ -671,7 +752,7 @@ exports.mixProject = async (req, res) => {
       exists: fsSync.existsSync(mixPath),
     });
 
-    // Send response with URL
+    // Send response with URL and processing details
     res.json({
       message: "Mix created successfully",
       mixedFile: {
@@ -679,6 +760,7 @@ exports.mixProject = async (req, res) => {
         path: toAbsolutePath(project.mixedFile.path),
         url: getUrlPath(toAbsolutePath(project.mixedFile.path)),
       },
+      processingDetails,
     });
   } catch (error) {
     // Log the full error

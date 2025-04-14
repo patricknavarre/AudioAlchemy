@@ -88,6 +88,60 @@ const projectSchema = new mongoose.Schema({
   },
   files: [fileSchema],
   mixedFile: mixedFileSchema,
+  processingDetails: {
+    files: [{
+      name: String,
+      stemType: String,
+      analysis: {
+        issues: {
+          muddy: Boolean,
+          harsh: Boolean,
+          phaseCancellation: Boolean,
+          excessiveStereoWidth: Boolean,
+          dynamicsIssues: Boolean,
+        },
+        frequency: {
+          bands: mongoose.Schema.Types.Mixed,
+          spectralFeatures: {
+            flatness: Number,
+          }
+        },
+        dynamics: {
+          crestFactor: Number,
+          peakLevel: Number,
+          rmsLevel: Number,
+        },
+        stereo: {
+          correlation: Number,
+          width_ratio: Number,
+        },
+        rhythm: {
+          tempo: Number,
+          transientDensity: Number,
+        }
+      },
+      processing: {
+        filters: [{
+          filter: String,
+          description: String,
+        }],
+        improvements: mongoose.Schema.Types.Mixed
+      }
+    }],
+    mixingDetails: {
+      method: String,
+      format: String,
+      sampleRate: Number,
+      bitDepth: Number,
+      channels: Number
+    },
+    loudness: {
+      target: Number,
+      integrated: Number,
+      range: Number,
+      maxMomentary: Number
+    }
+  },
   status: {
     type: String,
     enum: ["uploading", "processing", "ready", "error"],
