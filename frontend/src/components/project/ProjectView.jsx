@@ -53,6 +53,17 @@ export default function ProjectView() {
           }
         );
         console.log("Project data received:", response.data);
+        
+        // Debug processing data
+        console.log("Processing details:", response.data.processingDetails);
+        console.log("Files with analysis:", response.data.files.map(file => ({
+          stemType: file.stemType,
+          hasProcessing: !!file.processing,
+          hasAnalysis: !!file.analysis,
+          processingKeys: file.processing ? Object.keys(file.processing) : [],
+          analysisKeys: file.analysis ? Object.keys(file.analysis) : []
+        })));
+        
         const projectData = response.data;
         setProject(projectData);
 
@@ -81,6 +92,9 @@ export default function ProjectView() {
             };
           });
           setProcessedFiles(files);
+          
+          // Show details for all stems by default
+          setExpandedFile('all');
         }
       } catch (err) {
         console.error("Project initialization error:", err);
@@ -440,43 +454,69 @@ export default function ProjectView() {
                         </div>
                       </div>
                     )}
+                    
                     {file.analysis.frequency && (
-                      <>
-                        <div>
-                          <h4 className="text-purple-200 mb-1">
-                            Frequency Analysis:
-                          </h4>
-                          <ul className="list-disc list-inside text-purple-200/70">
-                            {Object.entries(
-                              file.analysis.frequency.bands || {}
-                            ).map(([band, data]) => (
-                              <li key={band}>
-                                {band}: {data?.energy?.toFixed(2) || 0} energy
-                              </li>
+                      <div>
+                        <h4 className="text-purple-200 mb-1">
+                          Frequency Profile:
+                        </h4>
+                        <div className="text-xs text-purple-200/70">
+                          {Object.entries(file.analysis.frequency.bands || {})
+                            .filter(([_, data]) => data.energy > 0.1)
+                            .map(([band, data]) => (
+                              <div key={band} className="mb-1">
+                                <div className="flex justify-between">
+                                  <span>{band.replace(/([A-Z])/g, " $1").toLowerCase()}:</span>
+                                  <span>{data.energy.toFixed(2)}</span>
+                                </div>
+                                <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+                                  <div 
+                                    className="bg-purple-500/50 h-full" 
+                                    style={{ width: `${Math.min(100, data.energy * 25)}%` }}
+                                  ></div>
+                                </div>
+                              </div>
                             ))}
-                          </ul>
                         </div>
-                        <div>
-                          <h4 className="text-purple-200 mb-1">Dynamics:</h4>
-                          <ul className="list-disc list-inside text-purple-200/70">
-                            <li>
-                              Crest Factor:{" "}
-                              {file.analysis.dynamics?.crestFactor?.toFixed(
-                                1
-                              ) || 0}
-                            </li>
-                            <li>
-                              Stereo Width:{" "}
-                              {(file.analysis.stereo?.width_ratio || 0).toFixed(
-                                2
-                              )}
-                            </li>
-                          </ul>
+                      </div>
+                    )}
+                    
+                    {(file.analysis.dynamics || file.analysis.stereo) && (
+                      <div>
+                        <h4 className="text-purple-200 mb-1">
+                          Technical Metrics:
+                        </h4>
+                        <div className="text-xs grid grid-cols-2 gap-x-2 text-purple-200/70">
+                          {file.analysis.dynamics?.crestFactor && (
+                            <div className="flex justify-between">
+                              <span>Dynamics:</span>
+                              <span>{file.analysis.dynamics.crestFactor.toFixed(1)}</span>
+                            </div>
+                          )}
+                          {file.analysis.dynamics?.peakLevel && (
+                            <div className="flex justify-between">
+                              <span>Peak:</span>
+                              <span>{file.analysis.dynamics.peakLevel.toFixed(1)} dB</span>
+                            </div>
+                          )}
+                          {file.analysis.stereo?.correlation && (
+                            <div className="flex justify-between">
+                              <span>Stereo Corr:</span>
+                              <span>{file.analysis.stereo.correlation.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {file.analysis.stereo?.width_ratio && (
+                            <div className="flex justify-between">
+                              <span>Width:</span>
+                              <span>{file.analysis.stereo.width_ratio.toFixed(2)}</span>
+                            </div>
+                          )}
                         </div>
-                      </>
+                      </div>
                     )}
                   </div>
                 )}
+
                 {file.processing?.filters && (
                   <div>
                     <h4 className="text-purple-200 mb-1">
@@ -489,6 +529,7 @@ export default function ProjectView() {
                           className="px-2 py-1 rounded-full bg-purple-500/20 text-purple-200 text-xs"
                         >
                           {filter.filter}
+                          {filter.description && `: ${filter.description}`}
                         </span>
                       ))}
                     </div>
@@ -501,16 +542,39 @@ export default function ProjectView() {
           {processingDetails.mixingDetails && (
             <div className="p-4 rounded-xl backdrop-blur-sm bg-white/5 border border-white/10">
               <h3 className="font-medium text-white mb-2">Final Mix Details</h3>
-              <div className="text-sm text-purple-200/70">
-                <p>
-                  Mixed {processingDetails.files?.length || 0} stems using{" "}
-                  {processingDetails.mixingDetails.method}
-                </p>
-                <p>Output Format: {processingDetails.mixingDetails.format}</p>
-                <p>
-                  Sample Rate: {processingDetails.mixingDetails.sampleRate}Hz
-                </p>
-                <p>Bit Depth: {processingDetails.mixingDetails.bitDepth}-bit</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="text-sm text-purple-200/70">
+                  <p>
+                    <span className="text-purple-200">Method:</span> {processingDetails.mixingDetails.method}
+                  </p>
+                  <p>
+                    <span className="text-purple-200">Format:</span> {processingDetails.mixingDetails.format}
+                  </p>
+                  <p>
+                    <span className="text-purple-200">Sample Rate:</span> {processingDetails.mixingDetails.sampleRate}Hz
+                  </p>
+                  <p>
+                    <span className="text-purple-200">Bit Depth:</span> {processingDetails.mixingDetails.bitDepth}-bit
+                  </p>
+                </div>
+                <div className="text-sm text-purple-200/70">
+                  <p>
+                    <span className="text-purple-200">Mix Process:</span> {processingDetails.files?.length || 0} stems combined
+                  </p>
+                  <p>
+                    <span className="text-purple-200">Channels:</span> {processingDetails.mixingDetails.channels || 2}
+                  </p>
+                  {processingDetails.loudness && (
+                    <>
+                      <p>
+                        <span className="text-purple-200">Target Loudness:</span> {processingDetails.loudness.target || -23} LUFS
+                      </p>
+                      <p>
+                        <span className="text-purple-200">Actual Loudness:</span> {processingDetails.loudness.integrated?.toFixed(1) || "N/A"} LUFS
+                      </p>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -534,7 +598,13 @@ export default function ProjectView() {
   );
 
   const ProcessingInfo = ({ file }) => {
-    if (!file.processing && !file.analysis) return null;
+    console.log("ProcessingInfo component received file:", file);
+    
+    // Ensure file has processing or analysis data
+    if (!file || (!file.processing && !file.analysis)) {
+      console.log("No processing or analysis data found for file");
+      return <div className="mt-4 pt-4 border-t border-white/10 text-purple-200 text-sm">No processing data available</div>;
+    }
 
     return (
       <div className="mt-4 pt-4 border-t border-white/10">
@@ -568,9 +638,15 @@ export default function ProjectView() {
                 {Object.entries(file.analysis.frequency.bands || {}).map(
                   ([band, data]) => (
                     <li key={band}>
-                      {band}: {data?.energy?.toFixed(2) || 0} energy
+                      {band.replace(/([A-Z])/g, " $1").toLowerCase()}: {data?.energy?.toFixed(2) || 0} energy
+                      {data?.peak_freq && ` (peak: ${Math.round(data.peak_freq)} Hz)`}
                     </li>
                   )
+                )}
+                {file.analysis.frequency.spectralFeatures?.flatness && (
+                  <li>
+                    Spectral Flatness: {file.analysis.frequency.spectralFeatures.flatness.toFixed(3)}
+                  </li>
                 )}
               </ul>
             </div>
@@ -588,6 +664,21 @@ export default function ProjectView() {
                     {file.analysis.dynamics.crestFactor.toFixed(1)}
                   </li>
                 )}
+                {file.analysis?.dynamics?.peakLevel && (
+                  <li>
+                    Peak Level: {file.analysis.dynamics.peakLevel.toFixed(1)} dB
+                  </li>
+                )}
+                {file.analysis?.dynamics?.rmsLevel && (
+                  <li>
+                    RMS Level: {file.analysis.dynamics.rmsLevel.toFixed(1)} dB
+                  </li>
+                )}
+                {file.analysis?.stereo?.correlation && (
+                  <li>
+                    Stereo Correlation: {file.analysis.stereo.correlation.toFixed(2)}
+                  </li>
+                )}
                 {file.analysis?.stereo?.width_ratio && (
                   <li>
                     Stereo Width: {file.analysis.stereo.width_ratio.toFixed(2)}
@@ -597,6 +688,24 @@ export default function ProjectView() {
             </div>
           )}
         </div>
+
+        {file.analysis?.rhythm && (
+          <div className="mt-3">
+            <h4 className="text-purple-200 text-sm font-medium mb-2">
+              Rhythm Analysis:
+            </h4>
+            <ul className="list-disc list-inside text-purple-200/70 text-sm">
+              {file.analysis.rhythm.tempo && (
+                <li>Tempo: {Math.round(file.analysis.rhythm.tempo)} BPM</li>
+              )}
+              {file.analysis.rhythm.transientDensity && (
+                <li>
+                  Transient Density: {file.analysis.rhythm.transientDensity.toFixed(2)}
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
 
         {file.processing?.filters && file.processing.filters.length > 0 && (
           <div className="mt-3">
@@ -610,6 +719,7 @@ export default function ProjectView() {
                   className="px-2 py-1 rounded-full bg-purple-500/20 text-purple-200 text-xs"
                 >
                   {filter.filter}
+                  {filter.description && `: ${filter.description}`}
                 </span>
               ))}
             </div>
@@ -630,6 +740,22 @@ export default function ProjectView() {
                 )
               )}
             </div>
+          </div>
+        )}
+
+        {file.processingDetails?.filters && (
+          <div className="mt-3">
+            <h4 className="text-purple-200 text-sm font-medium mb-2">
+              Audio Processing Chain:
+            </h4>
+            <ul className="list-disc list-inside text-purple-200/70 text-sm">
+              {file.processingDetails.filters.map((filter, i) => (
+                <li key={i}>
+                  {filter.type}
+                  {filter.settings && `: ${JSON.stringify(filter.settings)}`}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>
@@ -784,9 +910,17 @@ export default function ProjectView() {
             </div>
 
             <div className="mb-8">
-              <h2 className="text-2xl font-bold text-white mb-4">
-                Processed Files
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-white">
+                  Processed Files
+                </h2>
+                <button
+                  onClick={() => setExpandedFile(expandedFile === 'all' ? null : 'all')}
+                  className="px-3 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 text-sm transition-colors"
+                >
+                  {expandedFile === 'all' ? "Hide All Details" : "Show All Details"}
+                </button>
+              </div>
               <div className="space-y-6">
                 {processedFiles.map((file, index) => (
                   <div
@@ -806,12 +940,12 @@ export default function ProjectView() {
                         <button
                           onClick={() =>
                             setExpandedFile(
-                              expandedFile === index ? null : index
+                              expandedFile === index || (expandedFile === 'all' && index === 0) ? null : expandedFile === 'all' ? index : expandedFile === index - 1 ? index : 'all'
                             )
                           }
                           className="text-purple-200 hover:text-white transition-colors"
                         >
-                          {expandedFile === index
+                          {expandedFile === index || expandedFile === 'all'
                             ? "Hide Details"
                             : "Show Details"}
                         </button>
@@ -835,7 +969,7 @@ export default function ProjectView() {
                         {(stemVolumes[file._id] || 1).toFixed(1)}x
                       </span>
                     </div>
-                    {expandedFile === index && <ProcessingInfo file={file} />}
+                    {(expandedFile === index || expandedFile === 'all') && <ProcessingInfo file={file} />}
                   </div>
                 ))}
               </div>
