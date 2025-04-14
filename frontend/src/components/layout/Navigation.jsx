@@ -34,7 +34,7 @@ export default function Navigation() {
               className="text-white font-bold text-xl flex items-center space-x-2"
             >
               <FiMusic className="h-6 w-6" />
-              <span>AudioAlchemist™</span>
+              <span>AudioAlchemy™</span>
               <span className="text-xs align-top">©</span>
             </Link>
           </div>

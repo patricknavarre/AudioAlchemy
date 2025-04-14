@@ -172,6 +172,18 @@ router.post("/:id/remix", auth, async (req, res) => {
   }
 });
 
+router.post("/:id/adjust-true-peak", auth, async (req, res) => {
+  try {
+    await projectController.adjustTruePeak(req, res);
+  } catch (error) {
+    console.error("Error adjusting True Peak:", error);
+    res.status(500).json({
+      message: "Error adjusting True Peak",
+      error: error.message,
+    });
+  }
+});
+
 router.delete("/:id", auth, async (req, res) => {
   try {
     await projectController.deleteProject(req, res);
