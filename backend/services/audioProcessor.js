@@ -380,6 +380,72 @@ class AudioProcessor {
       });
     });
   }
+
+  async adjustTruePeak(inputPath, outputPath, truePeakLimit = -1.0) {
+    return new Promise((resolve, reject) => {
+      console.log(`Adjusting True Peak to ${truePeakLimit} dB: ${inputPath}`);
+      
+      // Convert relative path to absolute path if needed
+      const absoluteInputPath = path.isAbsolute(inputPath)
+        ? inputPath
+        : path.join(UPLOAD_DIR, inputPath);
+        
+      // Check if file exists before proceeding
+      if (!fsSync.existsSync(absoluteInputPath)) {
+        console.error("File not found:", {
+          requestedPath: inputPath,
+          absolutePath: absoluteInputPath,
+        });
+        return reject(new Error(`File not found: ${absoluteInputPath}`));
+      }
+      
+      // Convert dB value to linear scale for the alimiter filter
+      // Formula: linear = 10^(dB/20)
+      const linearLimit = Math.pow(10, truePeakLimit / 20).toFixed(6);
+      console.log(`Converting ${truePeakLimit} dB to linear scale: ${linearLimit}`);
+      
+      ffmpeg(absoluteInputPath)
+        .audioFilters([
+          // Professional True Peak limiter with look-ahead
+          // FFmpeg alimiter expects linear scale values (not dB)
+          `alimiter=level_in=1:level_out=1:limit=${linearLimit}:attack=5:release=50:level=enabled`
+        ])
+        .toFormat("wav")
+        .audioCodec("pcm_s24le")
+        .audioFrequency(48000) // Maintain professional sample rate
+        .audioChannels(2) // Maintain stereo
+        .on("start", (cmd) => {
+          console.log("Started FFmpeg True Peak adjustment:", cmd);
+        })
+        .on("error", (err) => {
+          console.error("FFmpeg True Peak limiting error:", {
+            error: err.message,
+            inputPath: absoluteInputPath,
+          });
+          reject(err);
+        })
+        .on("end", async () => {
+          try {
+            // Measure the new loudness to return accurate information
+            const measurements = await this.measureLoudness(outputPath);
+            
+            resolve({
+              processedPath: outputPath,
+              truePeakLimit,
+              measurements
+            });
+          } catch (error) {
+            console.error("Error measuring adjusted audio:", error);
+            // Still resolve with basic info if measurement fails
+            resolve({
+              processedPath: outputPath,
+              truePeakLimit
+            });
+          }
+        })
+        .save(outputPath);
+    });
+  }
 }
 
 module.exports = new AudioProcessor();

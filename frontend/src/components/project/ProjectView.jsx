@@ -28,9 +28,11 @@ export default function ProjectView() {
   const [stemVolumes, setStemVolumes] = useState({});
   const [isRemixing, setIsRemixing] = useState(false);
   const [targetLUFS, setTargetLUFS] = useState(-23);
+  const [truePeakLimit, setTruePeakLimit] = useState(-1.0);
   const [loudnessMeasurements, setLoudnessMeasurements] = useState(null);
   const [gainAdjustment, setGainAdjustment] = useState(0);
   const [isCheckingLoudness, setIsCheckingLoudness] = useState(false);
+  const [isAdjustingTruePeak, setIsAdjustingTruePeak] = useState(false);
 
   // Single useEffect to handle project fetching and URL initialization
   useEffect(() => {
@@ -372,6 +374,63 @@ export default function ProjectView() {
       toast.error("Failed to normalize mix");
     } finally {
       setMixing(false);
+    }
+  };
+
+  const handleTruePeakAdjustment = async () => {
+    try {
+      setIsAdjustingTruePeak(true);
+      
+      console.log(`Adjusting True Peak to ${truePeakLimit} dB`);
+      
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_URL}/api/projects/${id}/adjust-true-peak`,
+        { truePeakLimit },
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+      
+      console.log("True Peak adjustment response:", response.data);
+      
+      if (response.data.processingDetails) {
+        setProcessingDetails(response.data.processingDetails);
+      }
+      
+      // Wait a moment for the processing to complete
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      
+      // Fetch the updated project data with the adjusted audio
+      const updatedProjectResponse = await axios.get(
+        `${import.meta.env.VITE_API_URL}/api/projects/${id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+      
+      console.log("Updated project data after True Peak adjustment:", updatedProjectResponse.data);
+      const projectData = updatedProjectResponse.data;
+      setProject(projectData);
+      
+      // Update audio URL
+      if (projectData.mixedFile?.path) {
+        const fileName = getFilename(projectData.mixedFile.path);
+        console.log("Setting mixed file URL for:", fileName);
+        setAudioUrl(
+          `${import.meta.env.VITE_API_URL}/api/projects/mixed/${fileName}`
+        );
+      }
+      
+      toast.success("True Peak adjustment completed successfully");
+    } catch (error) {
+      console.error("Error adjusting True Peak:", error);
+      toast.error(error.response?.data?.message || "Error adjusting True Peak");
+    } finally {
+      setIsAdjustingTruePeak(false);
     }
   };
 
@@ -834,6 +893,61 @@ export default function ProjectView() {
     );
   };
 
+  const TruePeakControls = () => {
+    // Handle True Peak limit slider change
+    const handleTruePeakChange = (e) => {
+      setTruePeakLimit(parseFloat(e.target.value));
+    };
+    
+    // True Peak values are typically between -0.1 and -6.0 dB for broadcast
+    return (
+      <div className="p-4 rounded-xl backdrop-blur-sm bg-white/5 border border-white/10 mt-4">
+        <h3 className="font-medium text-white mb-4">True Peak Control</h3>
+        
+        <div className="mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-purple-200">True Peak Limit:</span>
+            <span className="text-purple-200 font-medium">
+              {truePeakLimit.toFixed(1)} dB
+            </span>
+          </div>
+          
+          <div className="flex items-center space-x-4">
+            <span className="text-purple-200 text-sm">-6.0 dB</span>
+            <input
+              type="range"
+              min="-6.0"
+              max="-0.1"
+              step="0.1"
+              value={truePeakLimit}
+              onChange={handleTruePeakChange}
+              className="w-full h-2 bg-purple-200/20 rounded-lg appearance-none cursor-pointer"
+            />
+            <span className="text-purple-200 text-sm">-0.1 dB</span>
+          </div>
+          
+          <p className="text-purple-200/60 text-sm mt-2">
+            Adjust the maximum True Peak level for broadcast compliance. Lower values provide more headroom but can reduce overall loudness.
+          </p>
+        </div>
+        
+        <button
+          onClick={handleTruePeakAdjustment}
+          disabled={isAdjustingTruePeak || !project?.mixedFile}
+          className="w-full px-4 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isAdjustingTruePeak ? "Processing..." : "Apply True Peak Limiting"}
+        </button>
+        
+        {project?.processingDetails?.loudness?.truePeakLimit !== undefined && (
+          <div className="mt-4 text-center text-purple-200 text-sm">
+            Current True Peak Limit: {project.processingDetails.loudness.truePeakLimit.toFixed(1)} dB
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 px-4 py-8">
       {loading ? (
@@ -982,48 +1096,48 @@ export default function ProjectView() {
                 <h2 className="text-2xl font-bold text-white mb-4">
                   Final Mix
                 </h2>
-                {audioUrl && (
-                  <>
-                    <div className="p-6 rounded-xl backdrop-blur-sm bg-white/5 border border-white/10 mb-4">
-                      <WaveformPlayer audioUrl={audioUrl} height={120} />
-                    </div>
+                <div className="p-6 rounded-xl backdrop-blur-sm bg-white/5 border border-white/10">
+                  <WaveformPlayer audioUrl={audioUrl} height={120} />
+                </div>
 
-                    <LoudnessMeter
-                      measurements={loudnessMeasurements}
-                      onCheckLoudness={handleCheckLoudness}
-                    />
+                <LoudnessMeter
+                  measurements={loudnessMeasurements}
+                  onCheckLoudness={handleCheckLoudness}
+                />
 
-                    <div className="flex gap-4">
-                      <button
-                        onClick={handleRemix}
-                        disabled={isRemixing}
-                        className={`flex-1 p-4 rounded-xl font-medium transition-all duration-200
-                          ${
-                            isRemixing
-                              ? "bg-gray-600 cursor-not-allowed"
-                              : "bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white hover:shadow-lg hover:-translate-y-0.5"
-                          }`}
-                      >
-                        {isRemixing ? (
-                          <div className="flex items-center justify-center space-x-3">
-                            <FiRefreshCw className="animate-spin" />
-                            <span>Updating Mix...</span>
-                          </div>
-                        ) : (
-                          "Update Mix"
-                        )}
-                      </button>
-                      <button
-                        onClick={handleDownload}
-                        className="flex-1 p-4 rounded-xl font-medium transition-all duration-200
-                          bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 
-                          hover:to-pink-600 text-white hover:shadow-lg hover:-translate-y-0.5"
-                      >
-                        Download Mix
-                      </button>
-                    </div>
-                  </>
-                )}
+                <div className="mb-4">
+                  <TruePeakControls />
+                </div>
+
+                <div className="flex gap-4">
+                  <button
+                    onClick={handleRemix}
+                    disabled={isRemixing}
+                    className={`flex-1 p-4 rounded-xl font-medium transition-all duration-200
+                      ${
+                        isRemixing
+                          ? "bg-gray-600 cursor-not-allowed"
+                          : "bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white hover:shadow-lg hover:-translate-y-0.5"
+                      }`}
+                  >
+                    {isRemixing ? (
+                      <div className="flex items-center justify-center space-x-3">
+                        <FiRefreshCw className="animate-spin" />
+                        <span>Updating Mix...</span>
+                      </div>
+                    ) : (
+                      "Update Mix"
+                    )}
+                  </button>
+                  <button
+                    onClick={handleDownload}
+                    className="flex-1 p-4 rounded-xl font-medium transition-all duration-200
+                      bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 
+                      hover:to-pink-600 text-white hover:shadow-lg hover:-translate-y-0.5"
+                  >
+                    Download Mix
+                  </button>
+                </div>
               </div>
             ) : (
               <button
