@@ -35,6 +35,77 @@ export default function ProjectView() {
   const [isAdjustingTruePeak, setIsAdjustingTruePeak] = useState(false);
   const [advancedControlsOpen, setAdvancedControlsOpen] = useState(false);
   const [showMixCreatedHighlight, setShowMixCreatedHighlight] = useState(false);
+  const [showMixNotification, setShowMixNotification] = useState(false);
+  const [blinkCount, setBlinkCount] = useState(0);
+  const [mixBackgroundColor, setMixBackgroundColor] = useState('transparent');
+
+  // Add styles for animations that don't rely on Tailwind
+  const pulseStyle = {
+    animation: 'pulse-animation 2s infinite',
+    boxShadow: '0 0 0 0 rgba(147, 51, 234, 0.7)',
+  };
+
+  // Add useEffect to handle the mix creation highlight timeout
+  useEffect(() => {
+    if (showMixCreatedHighlight) {
+      // Make the highlight visible for 5 seconds
+      const timer = setTimeout(() => {
+        setShowMixCreatedHighlight(false);
+      }, 5000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [showMixCreatedHighlight]);
+
+  // Define a more dramatic custom animation for the "New Mix Created!" badge
+  const badgeAnimationStyle = showMixCreatedHighlight ? {
+    animation: 'badge-pulse 1.5s infinite alternate, badge-bounce 3s ease-in-out infinite, badge-scale 4s ease-in-out infinite',
+    display: 'inline-block',
+    transform: 'translateZ(0)', // Hardware acceleration
+    backfaceVisibility: 'hidden', // Performance boost
+    fontWeight: 'bold',
+    letterSpacing: '0.05em',
+    textShadow: '0 0 10px rgba(255,255,255,0.7)',
+    border: '2px solid white'
+  } : {};
+
+  // Custom keyframe animations - add to a style tag in the component
+  const customAnimations = `
+    @keyframes badge-pulse {
+      0% { background-color: #9333ea; box-shadow: 0 0 10px rgba(147, 51, 234, 0.9); }
+      50% { background-color: #c026d3; box-shadow: 0 0 20px rgba(192, 38, 211, 0.9); }
+      100% { background-color: #db2777; box-shadow: 0 0 30px rgba(219, 39, 119, 0.9); }
+    }
+    
+    @keyframes badge-bounce {
+      0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-12px); }
+      60% { transform: translateY(-6px); }
+    }
+    
+    @keyframes badge-scale {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.15); }
+      100% { transform: scale(1); }
+    }
+  `;
+
+  const pulseKeyframes = `
+    @keyframes pulse-animation {
+      0% {
+        box-shadow: 0 0 0 0 rgba(147, 51, 234, 0.7);
+        background-color: rgba(147, 51, 234, 0.4);
+      }
+      70% {
+        box-shadow: 0 0 0 15px rgba(147, 51, 234, 0);
+        background-color: rgba(147, 51, 234, 0.1);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(147, 51, 234, 0);
+        background-color: rgba(147, 51, 234, 0.4);
+      }
+    }
+  `;
 
   // Single useEffect to handle project fetching and URL initialization
   useEffect(() => {
@@ -184,17 +255,29 @@ export default function ProjectView() {
           `${import.meta.env.VITE_API_URL}/api/projects/mixed/${fileName}`
         );
         
-        // Show highlight animation for newly created mix
-        setShowMixCreatedHighlight(true);
-        // Auto-scroll to the mix section
+        // Reset highlight animation state first (in case it was already true)
+        setShowMixCreatedHighlight(false);
+        
+        // Use a timeout to ensure state updates before setting to true
         setTimeout(() => {
-          document.getElementById('final-mix-section')?.scrollIntoView({ 
-            behavior: 'smooth',
-            block: 'start'
-          });
-          // Remove highlight after 5 seconds
-          setTimeout(() => setShowMixCreatedHighlight(false), 5000);
-        }, 500);
+          console.log("Setting mix created highlight to TRUE");
+          setShowMixCreatedHighlight(true);
+          setShowMixNotification(true);
+        }, 100);
+        
+        // Scroll to the mix section after a short delay
+        setTimeout(() => {
+          const mixSection = document.getElementById('final-mix-section');
+          if (mixSection) {
+            console.log("Scrolling to mix section");
+            window.scrollTo({
+              top: mixSection.offsetTop - 50,
+              behavior: 'smooth'
+            });
+          } else {
+            console.warn("Mix section element not found");
+          }
+        }, 800);
       }
 
       if (projectData.files?.length > 0) {
@@ -336,6 +419,15 @@ export default function ProjectView() {
         setAudioUrl(
           `${import.meta.env.VITE_API_URL}/api/projects/mixed/${fileName}`
         );
+        
+        // Reset highlight animation state first (in case it was already true)
+        setShowMixCreatedHighlight(false);
+        
+        // Use a timeout to ensure state updates before setting to true
+        setTimeout(() => {
+          console.log("Setting mix created highlight to TRUE");
+          setShowMixCreatedHighlight(true);
+        }, 100);
       }
 
       toast.success("Mix updated successfully!");
@@ -1015,6 +1107,27 @@ export default function ProjectView() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 px-4 py-8">
+      {/* Inject custom animations */}
+      <style dangerouslySetInnerHTML={{ __html: customAnimations }} />
+      
+      {/* Notification banner for new mix */}
+      {showMixNotification && (
+        <div className="fixed top-0 left-0 right-0 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 px-4 z-50 shadow-lg flex items-center justify-center animate-bounce">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
+          </svg>
+          <span className="font-medium">New Mix Created! Scroll down to see it</span>
+          <button 
+            onClick={() => setShowMixNotification(false)}
+            className="ml-2 bg-white/20 rounded-full p-1 hover:bg-white/30 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      )}
+      
       {loading ? (
         <div className="flex items-center justify-center min-h-screen">
           <div className="flex items-center space-x-3 text-white">
@@ -1159,20 +1272,26 @@ export default function ProjectView() {
             {project.mixedFile ? (
               <div 
                 id="final-mix-section" 
-                className={`mb-6 transition-all duration-500 ${
-                  showMixCreatedHighlight 
-                    ? "bg-gradient-to-r from-purple-800/30 via-pink-600/30 to-purple-800/30 animate-pulse rounded-xl p-4"
-                    : ""
-                }`}
+                style={{
+                  backgroundColor: mixBackgroundColor,
+                  padding: showMixCreatedHighlight ? '16px' : '4px',
+                  borderRadius: '12px',
+                  transition: 'background-color 0.3s ease',
+                  marginBottom: '1.5rem'
+                }}
               >
                 <h2 className="text-2xl font-bold text-white mb-4 flex items-center">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 mr-2 text-purple-400" viewBox="0 0 20 20" fill="currentColor">
                     <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
                   </svg>
                   Final Mix
+                  {/* Show the badge only when a new mix is created */}
                   {showMixCreatedHighlight && (
-                    <span className="ml-3 text-sm bg-gradient-to-r from-purple-500 to-pink-500 text-white px-3 py-1 rounded-full animate-bounce">
-                      New!
+                    <span 
+                      className="ml-3 px-4 py-2 rounded-full text-white font-bold text-base"
+                      style={badgeAnimationStyle}
+                    >
+                      ✨ New Mix Created! ✨
                     </span>
                   )}
                 </h2>
@@ -1182,7 +1301,7 @@ export default function ProjectView() {
 
                 <AdvancedControls />
 
-                <div className="flex gap-4">
+                <div className="flex gap-4 mt-4">
                   <button
                     onClick={handleRemix}
                     disabled={isRemixing}

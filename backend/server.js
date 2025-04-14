@@ -1,8 +1,8 @@
 /**
- * @copyright Copyright (c) 2024 AudioAlchemist. All rights reserved.
- * @file server.js - Main server application implementing AudioAlchemist's core backend functionality
+ * @copyright Copyright (c) 2024 AudioAlchemy. All rights reserved.
+ * @file server.js - Main server application implementing AudioAlchemy's core backend functionality
  *
- * This file contains proprietary and confidential code implementing AudioAlchemist's
+ * This file contains proprietary and confidential code implementing AudioAlchemy's
  * unique audio processing pipeline and project management system. Unauthorized copying,
  * modification, distribution, or use is strictly prohibited.
  */

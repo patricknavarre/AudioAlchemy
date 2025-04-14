@@ -1042,6 +1042,111 @@ exports.remixProject = async (req, res) => {
   }
 };
 
+exports.adjustTruePeak = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { truePeakLimit } = req.body;
+    
+    if (truePeakLimit === undefined) {
+      return res.status(400).json({ message: "True Peak limit is required" });
+    }
+    
+    // Validate the truePeakLimit value (typical range is -0.1 to -6.0 dB)
+    const tpLimit = parseFloat(truePeakLimit);
+    if (isNaN(tpLimit) || tpLimit > 0 || tpLimit < -20) {
+      return res.status(400).json({ 
+        message: "Invalid True Peak limit. Value must be between -20 and 0 dB" 
+      });
+    }
+    
+    // Get the project
+    const project = await Project.findOne({
+      _id: id,
+      user: req.userId,
+    });
+
+    if (!project) {
+      return res.status(404).json({ message: "Project not found" });
+    }
+
+    if (!project.mixedFile || !project.mixedFile.path) {
+      return res.status(400).json({ message: "No mixed file found for this project" });
+    }
+    
+    // Get absolute path of the source file
+    const sourcePath = toAbsolutePath(project.mixedFile.path);
+    
+    // Create a new filename for the adjusted file
+    const adjustedFileName = `tp${tpLimit.toFixed(1)}_${path.basename(project.mixedFile.path)}`;
+    const adjustedPath = path.join(MIXED_DIR, adjustedFileName);
+    
+    // Ensure the mixed directory exists
+    await fs.mkdir(MIXED_DIR, { recursive: true, mode: 0o777 });
+    
+    // Process the file with true peak limiter
+    const result = await audioProcessor.adjustTruePeak(
+      sourcePath,
+      adjustedPath,
+      tpLimit
+    );
+    
+    // Update the project with the new file
+    project.mixedFile = {
+      fileName: adjustedFileName,
+      path: toRelativePath(adjustedPath),
+      createdAt: new Date(),
+    };
+    
+    // Store true peak adjustment in the processing details
+    if (!project.processingDetails) {
+      project.processingDetails = {};
+    }
+    
+    if (!project.processingDetails.loudness) {
+      project.processingDetails.loudness = {};
+    }
+    
+    project.processingDetails.loudness.truePeakLimit = tpLimit;
+    
+    if (result.measurements) {
+      project.processingDetails.loudness.integrated = result.measurements.integratedLoudness;
+      project.processingDetails.loudness.range = result.measurements.loudnessRange;
+      project.processingDetails.loudness.truePeak = result.measurements.truePeakMax;
+    }
+    
+    await project.save();
+    
+    // Log success
+    console.log("True Peak adjustment completed:", {
+      projectId: project._id,
+      adjustedPath,
+      exists: fsSync.existsSync(adjustedPath),
+      truePeakLimit: tpLimit,
+    });
+    
+    // Send response with URL
+    res.json({
+      message: "True Peak adjustment completed successfully",
+      mixedFile: {
+        ...project.mixedFile.toObject(),
+        path: toAbsolutePath(project.mixedFile.path),
+        url: getUrlPath(toAbsolutePath(project.mixedFile.path)),
+      },
+      processingDetails: project.processingDetails,
+    });
+  } catch (error) {
+    console.error("True Peak adjustment error:", {
+      message: error.message,
+      stack: error.stack,
+    });
+    
+    res.status(500).json({
+      message: "Error adjusting True Peak",
+      error: error.message,
+    });
+  }
+};
+
 exports.deleteProject = async (req, res) => {
   try {
     const project = await Project.findOne({
